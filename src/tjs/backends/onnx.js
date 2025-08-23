@@ -20,7 +20,7 @@ import { env, apis } from '../env.js';
 
 // NOTE: Import order matters here. We need to import `onnxruntime-node` before `onnxruntime-web`.
 // In either case, we select the default export if it exists, otherwise we use the named export.
-import * as ONNX_NODE from 'onnxruntime-node';
+// import * as ONNX_NODE from 'onnxruntime-node';
 import * as ONNX_WEB from 'onnxruntime-web';
 
 export { Tensor } from 'onnxruntime-common';
@@ -60,7 +60,7 @@ if (ORT_SYMBOL in globalThis) {
     // If the JS runtime exposes their own ONNX runtime, use it
     ONNX = globalThis[ORT_SYMBOL];
 
-} else if (apis.IS_NODE_ENV) {
+} else if (false) { // Changed from: } else if (apis.IS_NODE_ENV) {
     ONNX = ONNX_NODE.default ?? ONNX_NODE;
 
     // Updated as of ONNX Runtime 1.20.1

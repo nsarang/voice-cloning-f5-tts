@@ -50,35 +50,35 @@ export class Tensor {
     /** @type {number[]} Dimensions of the tensor. */
     get dims() {
         // @ts-ignore
-        return this.ort_tensor.dims;
+        return this.ort.dims;
     }
     set dims(value) {
         // FIXME: ONNXTensor declares dims as readonly so one needs to use the constructor() if dims change.
         // @ts-ignore
-        this.ort_tensor.dims = value;
+        this.ort.dims = value;
     }
 
     /** @type {DataType} Type of the tensor. */
     get type() {
-        return this.ort_tensor.type;
+        return this.ort.type;
     };
 
     /** @type {DataArray} The data stored in the tensor. */
     get data() {
-        return this.ort_tensor.data;
+        return this.ort.data;
     }
 
     /** @type {number} The number of elements in the tensor. */
     get size() {
-        return this.ort_tensor.size;
+        return this.ort.size;
     };
 
     /** @type {string} The location of the tensor data. */
     get location() {
-        return this.ort_tensor.location;
+        return this.ort.location;
     };
 
-    ort_tensor;
+    ort;
 
     /**
      * Create a new Tensor or copy an existing Tensor.
@@ -86,10 +86,10 @@ export class Tensor {
      */
     constructor(...args) {
         if (isONNXTensor(args[0])) {
-            this.ort_tensor = /** @type {ONNXTensor} */ (args[0]);
+            this.ort = /** @type {ONNXTensor} */ (args[0]);
         } else {
             // Create new tensor
-            this.ort_tensor = new ONNXTensor(
+            this.ort = new ONNXTensor(
                 /** @type {DataType} */(args[0]),
                 // @ts-expect-error ts(2769) Type 'number' is not assignable to type 'bigint'.
                 /** @type {Exclude<import('./maths.js').AnyTypedArray, Uint8ClampedArray>} */(args[1]),
@@ -119,8 +119,8 @@ export class Tensor {
     }
 
     dispose() {
-        this.ort_tensor.dispose();
-        // this.ort_tensor = undefined;
+        this.ort.dispose();
+        // this.ort = undefined;
     }
 
     /**
@@ -257,6 +257,14 @@ export class Tensor {
             this_data[i] = callback(this_data[i], i, this_data);
         }
         return this;
+    }
+
+    /**
+     * Return a new Tensor with the absolute value of each element.
+     * @returns {Tensor} The new tensor.
+     */
+    abs() {
+        return this.map(Math.abs);
     }
 
     /**
@@ -703,6 +711,10 @@ export class Tensor {
             dims[inferredIndex] = this_data.length / productOther;
         }
         return new Tensor(this.type, this_data, dims); // NOTE: uses same underlying storage
+    }
+
+    reshape(...dims) {
+        return this.view(...dims).clone();
     }
 
     neg_() {
@@ -1509,6 +1521,22 @@ export function zeros(size) {
  */
 export function zeros_like(tensor) {
     return zeros(tensor.dims);
+}
+
+/**
+ * Creates a 1D tensor with a range of values.
+ * @param {number} start - The starting value (inclusive).
+ * @param {number} end - The ending value (exclusive).
+ * @param {number} step - The step size (default is 1).
+ * @returns {Tensor} The created tensor.
+ */
+export function arange(start, end, step = 1) {
+    const length = Math.ceil((end - start) / step);
+    const data = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+        data[i] = start + i * step;
+    }
+    return new Tensor("float32", data, [length]);
 }
 
 /**

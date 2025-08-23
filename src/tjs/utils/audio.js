@@ -15,7 +15,7 @@ import {
     calculateReflectOffset, saveBlob,
 } from './core.js';
 import { apis } from '../env.js';
-import { Tensor, matmul } from './tensor.js';
+import { Tensor, matmul } from './torch.js';
 import fs from 'node:fs';
 
 /**

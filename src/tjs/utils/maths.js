@@ -1059,3 +1059,18 @@ export function dynamic_time_warping(matrix) {
     return [text_indices, time_indices];
 
 }
+
+/**
+ * Greatest Common Divisor - utility function for frequency ratio simplification
+ * @param {number} a First integer
+ * @param {number} b Second integer  
+ * @returns {number} Greatest common divisor
+ */
+export function gcd(a, b) {
+    a = Math.abs(Math.floor(a));
+    b = Math.abs(Math.floor(b));
+    while (b !== 0) {
+        [a, b] = [b, a % b];
+    }
+    return a;
+}

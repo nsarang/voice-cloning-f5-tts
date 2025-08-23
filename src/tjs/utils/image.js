@@ -11,7 +11,7 @@
 import { isNullishDimension, saveBlob } from './core.js';
 import { getFile } from './hub.js';
 import { apis } from '../env.js';
-import { Tensor } from './tensor.js';
+import { Tensor } from './torch.js';
 
 // Will be empty (or not used) if running in browser or web-worker
 import sharp from 'sharp';
