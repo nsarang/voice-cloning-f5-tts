@@ -5,8 +5,7 @@
 import * as ort from 'onnxruntime-web';
 import { Tensor } from './tjs/utils/torch.js';
 import { createInferenceSession, deviceToExecutionProviders } from './tjs/backends/onnx.js';
-import { getModelText } from './tjs/utils/hub.js';
-import { calculateRMS, normalizeToInt16 } from './audio-utils.js';
+import { calculateRMS, normalizeToInt16 } from './audio.js';
 
 export class F5TTS {
   constructor() {
@@ -14,7 +13,6 @@ export class F5TTS {
     this.sessionB = null;
     this.sessionC = null;
     this.vocabMap = null;
-    this.nfeStep = 32;
     this.hopLength = 256;
     this.targetSampleRate = 24000;
     this.targetRMS = 0.1;
@@ -22,7 +20,38 @@ export class F5TTS {
 
   async loadModels(modelPaths) {
     // Configure ONNX Runtime with WebGPU support
-    const providers = deviceToExecutionProviders('auto');
+    // const providers = deviceToExecutionProviders('auto');
+
+    let providers = deviceToExecutionProviders('auto');
+
+    // If WebGPU is detected, configure it for high performance
+    const webgpuProviderIndex = providers.findIndex(p =>
+      (typeof p === 'string' && p === 'webgpu') ||
+      (typeof p === 'object' && p.name === 'webgpu')
+    );
+
+    if (webgpuProviderIndex !== -1) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({
+          powerPreference: 'high-performance',
+          forceFallbackAdapter: false
+        });
+
+        if (adapter) {
+          const device = await adapter.requestDevice();
+          providers[webgpuProviderIndex] = {
+            name: 'webgpu',
+            device: device,
+            powerPreference: 'high-performance'
+          };
+          console.log('WebGPU configured with high-performance adapter');
+        }
+      } catch (e) {
+        console.log('High-performance GPU setup failed, using default WebGPU');
+      }
+    }
+
+    console.log("Detected providers:", providers);
     const sessionOptions = {
       executionProviders: providers,
       graphOptimizationLevel: 'all',
@@ -63,13 +92,11 @@ export class F5TTS {
       });
 
       console.log('Models loaded successfully');
-      console.log('Transformer providers:', this.sessionB.inputNames);
     } catch (error) {
       throw new Error(`Failed to load models: ${error.message}`);
     }
   }
 
-  // Text processing (simplified English-only)
   tokenizeText(text) {
     const chars = text.toLowerCase().split('');
     const tokens = chars.map(char => this.vocabMap[char] || 0);
@@ -103,19 +130,7 @@ export class F5TTS {
     return batches;
   }
 
-  // calculateDuration(refText, genText, refAudioLen, speed = 1.0) {
-  //   const zhPausePunc = /[。，、；：？！]/g;
-
-  //   const refTextLen = new TextEncoder().encode(refText).length + 
-  //                     3 * (refText.match(zhPausePunc) || []).length;
-  //   const genTextLen = new TextEncoder().encode(genText).length + 
-  //                     3 * (genText.match(zhPausePunc) || []).length;
-
-  //   return refAudioLen + Math.floor(refAudioLen / refTextLen * genTextLen / speed);
-  // }
-
-
-  async inference(refAudio, refText, genText, onProgress, speed = 1.0) {
+  async inference(refAudio, refText, genText, onProgress, speed, nfeSteps) {
     if (!this.sessionA || !this.sessionB || !this.sessionC) {
       throw new Error('Models not loaded');
     }
@@ -141,10 +156,6 @@ export class F5TTS {
     const combinedText = refText + " " + genText;
     const textTokens = this.tokenizeText(combinedText);
     const textTensor = new Tensor('int32', Int32Array.from(textTokens), [1, textTokens.length]);
-
-    console.log("combined text:", combinedText);
-    console.log("text tokens:", textTokens);
-    console.log("First 100 values of audio tensor:", audioTensor.data.slice(0, 100));
 
     // Calculate duration - matching Python
     const refAudioLen = Math.floor(refAudio.size / this.hopLength);
@@ -174,7 +185,7 @@ export class F5TTS {
     // Stage B: Transformer NFE steps - exact Python loop
     let timeStep = new ort.Tensor('int32', new Int32Array([0]), [1]);
 
-    for (let step = 0; step < this.nfeStep - 1; step++) {
+    for (let step = 0; step < nfeSteps - 1; step++) {
       const transformerInputs = {
         [this.sessionB.inputNames[0]]: noise,
         [this.sessionB.inputNames[1]]: ropeCosQ,
@@ -191,7 +202,7 @@ export class F5TTS {
       timeStep = transformerOutputs[this.sessionB.outputNames[1]];
 
       if (onProgress) {
-        onProgress(((step + 1) / this.nfeStep) * 100, `NFE Step ${step + 1}/${this.nfeStep}`);
+        onProgress(((step + 1) / nfeSteps) * 100, `NFE Step ${step + 1}/${nfeSteps}`);
       }
     }
 
@@ -204,39 +215,38 @@ export class F5TTS {
     const decodeOutputs = await this.sessionC.run(decodeInputs);
     const generatedSignal = decodeOutputs[this.sessionC.outputNames[0]];
 
-    console.log("Generated signal shape:", generatedSignal.dims);
-    console.log("First 100 values of generated signal:", generatedSignal.data.slice(0, 100));
-
-
-    console.log("Gen signal:", generatedSignal);
-    const outputTensor = new Tensor(generatedSignal);
-    console.log("output tensor:", outputTensor);
-    let normalizedTensor = outputTensor.to('float32').div(32767.0);
+    let normalizedTensor = new Tensor(generatedSignal).to('float32').div(32767.0).reshape(-1);
 
     // Revert back to original RMS
     if (refRMS < this.targetRMS) {
       normalizedTensor = normalizedTensor.mul(refRMS / this.targetRMS);
     }
 
-    // this.saveDebugData(audioInt16, "audio_processed");
-    // this.saveDebugData(audioSamples.length, "audio_len");
-    // this.saveDebugData(textIds, "text_ids");
-    // this.saveDebugData(duration, "duration");
-
-    return normalizedTensor.data;
+    return normalizedTensor;
   }
 
-  async generateSpeech(refAudio, refText, genText, onProgress, speed = 1.0) {
+  /**
+   * Generate speech audio from text using the F5TTS model.
+   * @param {Tensor} refAudio - The reference audio data.
+   * @param {string} refText - The reference text for the audio.
+   * @param {string} genText - The text to generate audio for.
+   * @param {Function} onProgress - Callback for progress updates.
+   * @param {number} speed - The speed of the generated speech.
+   * @param {number} nfeSteps - The number of NFE steps for generation.
+   * @param {boolean} bChunking - Whether to enable chunking.
+   * @returns {Promise<Float32Array>} - The generated speech audio data.
+   */
+  async generateSpeech({ refAudio, refText, genText, onProgress, speed, nfeSteps, bChunking }) {
+    if (!bChunking) {
+      return await this.inference(refAudio, refText, genText, onProgress, speed, nfeSteps);
+    }
+
     const maxChars = Math.trunc(new TextEncoder().encode(refText).length / (refAudio.length / refAudio.sampleRate) * (30 - refAudio.length / refAudio.sampleRate));
     const textBatches = this.splitTextIntoBatches(genText, Math.max(maxChars, 100));
 
-    if (textBatches.length === 1) {
-      return await this.inference(refAudio, refText, genText, onProgress);
-    }
-
     // Batch processing
     const results = [];
-    const total = textBatches.length * this.nfeStep;
+    const total = textBatches.length * nfeSteps;
     let current = 0;
 
     for (let i = 0; i < textBatches.length; i++) {
@@ -249,23 +259,15 @@ export class F5TTS {
             const overall = (current + progress) / total * 100;
             onProgress(overall, `Batch ${i + 1}/${textBatches.length}: ${message}`);
           }
-        }
+        },
+        speed,
+        nfeSteps
       );
 
       results.push(result);
-      current += this.nfeStep;
+      current += nfeSteps;
     }
 
-    // Concatenate results
-    const totalLength = results.reduce((sum, arr) => sum + arr.length, 0);
-    const combined = new Float32Array(totalLength);
-    let offset = 0;
-
-    for (const result of results) {
-      combined.set(result, offset);
-      offset += result.length;
-    }
-
-    return combined;
+    return torch.cat(results, 0);
   }
 }

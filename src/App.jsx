@@ -1,62 +1,233 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { F5TTS } from './f5-tts.js';
-import { loadAudio } from './audio-utils.js';
+import { loadAudio } from './audio.js';
 import { RawAudio } from './tjs/utils/audio.js';
+import { generatePodcast } from './podcast.js';
+
+let f5tts = null;
+
+const TabButton = ({ tab, isActive, onClick }) => (
+  <button
+    onClick={() => onClick(tab.id)}
+    className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${isActive
+      ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg'
+      : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+      }`}
+  >
+    <span className="text-lg">{tab.icon}</span>
+    {tab.label}
+  </button>
+);
+
+const AdvancedSettings = ({
+  speed, setSpeed,
+  nfeSteps, setNfeSteps,
+  removeSilence, setRemoveSilence,
+  enableChunking, setEnableChunking,
+  customSplitWords, setCustomSplitWords,
+  showAdvancedSettings, setShowAdvancedSettings
+}) => (
+  <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-6">
+    <button
+      onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+      className="w-full flex items-center justify-between cursor-pointer text-lg font-semibold text-white mb-4 hover:text-cyan-400 transition-colors"
+    >
+      <span>Advanced Settings</span>
+      <svg
+        className={`w-5 h-5 transform transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+
+    {showAdvancedSettings && (
+      <div className="space-y-6">
+        {/* Generation Settings */}
+        <div className="space-y-4">
+          <h4 className="text-md font-medium text-slate-200 border-b border-slate-600/50 pb-2">Generation Settings</h4>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">Speed</label>
+              <input
+                type="range"
+                min="0.3"
+                max="2.0"
+                step="0.1"
+                value={speed}
+                onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+              />
+              <span className="text-xs text-slate-400">{speed}x</span>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">NFE Steps</label>
+              <input
+                type="range"
+                min="8"
+                max="64"
+                step="1"
+                value={nfeSteps}
+                onChange={(e) => setNfeSteps(parseInt(e.target.value))}
+                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+              />
+              <span className="text-xs text-slate-400">{nfeSteps} steps</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Audio Processing */}
+        <div className="space-y-4">
+          <h4 className="text-md font-medium text-slate-200 border-b border-slate-600/50 pb-2">Audio Processing</h4>
+
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="removeSilence"
+                checked={removeSilence}
+                onChange={(e) => setRemoveSilence(e.target.checked)}
+                className="w-4 h-4 text-purple-400 bg-slate-700 border-slate-600 rounded focus:ring-purple-400/50 focus:ring-2"
+              />
+              <label htmlFor="removeSilence" className="text-sm font-medium text-slate-300">
+                Remove Silences
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Text Processing */}
+        <div className="space-y-4">
+          <h4 className="text-md font-medium text-slate-200 border-b border-slate-600/50 pb-2">Text Processing</h4>
+
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="enableChunking"
+                checked={enableChunking}
+                onChange={(e) => setEnableChunking(e.target.checked)}
+                className="w-4 h-4 text-purple-400 bg-slate-700 border-slate-600 rounded focus:ring-purple-400/50 focus:ring-2"
+              />
+              <label htmlFor="enableChunking" className="text-sm font-medium text-slate-300">
+                Enable Chunking
+              </label>
+            </div>
+
+            <div className={`space-y-2 transition-all duration-200 ${!enableChunking ? 'opacity-50' : ''}`}>
+              <label className="text-sm font-medium text-slate-300">Custom Split Words</label>
+              <input
+                type="text"
+                value={customSplitWords}
+                onChange={(e) => setCustomSplitWords(e.target.value)}
+                disabled={!enableChunking}
+                placeholder="Enter words separated by commas"
+                className={`w-full px-3 py-2 bg-slate-700/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all ${!enableChunking ? 'cursor-not-allowed bg-slate-800/50' : ''
+                  }`}
+              />
+              {!enableChunking && (
+                <p className="text-xs text-slate-500">Enable chunking to use custom split words</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+const AudioUploadArea = ({ onUpload, label, audio }) => (
+  <div
+    className="relative border-2 border-dashed border-slate-600/50 rounded-xl p-6 text-center hover:border-purple-400/50 transition-all cursor-pointer bg-slate-700/20"
+    onClick={() => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+      input.onchange = (e) => onUpload(e.target.files[0]);
+      input.click();
+    }}
+  >
+    <div className="space-y-3">
+      <div className="w-12 h-12 mx-auto bg-gradient-to-r from-cyan-400 to-purple-400 rounded-full flex items-center justify-center">
+        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+      </div>
+      <div>
+        <p className="font-medium text-white">{label}</p>
+        <p className="text-sm text-slate-400">Click to upload audio</p>
+      </div>
+    </div>
+    {audio && (
+      <div className="mt-3 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
+        <div className="flex items-center gap-2 text-slate-300 text-sm">
+          <div className="w-2 h-2 rounded-full bg-green-400"></div>
+          <span>Audio loaded: {(audio.size / 24000).toFixed(2)}s</span>
+        </div>
+      </div>
+    )}
+  </div>
+);
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('tts');
-  const [f5tts, setF5tts] = useState(null);
+  // const [f5tts, setF5tts] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ value: 0, message: '' });
-  
+
   // Basic TTS states
   const [refAudio, setRefAudio] = useState(null);
   const [refText, setRefText] = useState('hello this is some audio');
   const [genText, setGenText] = useState("yo what's up dude? I'm jacked brother. Cool");
   const [generatedAudio, setGeneratedAudio] = useState(null);
-  
+
   // Podcast states
-  const [speaker1Name, setSpeaker1Name] = useState('');
+  const [speaker1Name, setSpeaker1Name] = useState('Nima');
   const [speaker1Audio, setSpeaker1Audio] = useState(null);
-  const [speaker1Text, setSpeaker1Text] = useState('');
-  const [speaker2Name, setSpeaker2Name] = useState('');
+  const [speaker1Text, setSpeaker1Text] = useState('hello this is my voice');
+  const [speaker2Name, setSpeaker2Name] = useState('Bita');
   const [speaker2Audio, setSpeaker2Audio] = useState(null);
-  const [speaker2Text, setSpeaker2Text] = useState('');
-  const [podcastScript, setPodcastScript] = useState('');
+  const [speaker2Text, setSpeaker2Text] = useState('hello this is my voice');
+  const [podcastScript, setPodcastScript] = useState('Nima: yo what\'s good sir?\n\nBita: I\'m good thank you!');
   const [podcastAudio, setPodcastAudio] = useState(null);
-  
+
   // Multi-style states
   const [regularAudio, setRegularAudio] = useState(null);
   const [regularText, setRegularText] = useState('');
   const [emotionalText, setEmotionalText] = useState('');
   const [emotionalAudio, setEmotionalAudio] = useState(null);
   const [speechTypes, setSpeechTypes] = useState([]);
-  
+
   // Advanced settings
-  const [removeSlience, setRemoveSilence] = useState(true);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [removeSilence, setRemoveSilence] = useState(true);
   const [speed, setSpeed] = useState(1.0);
+  const [enableChunking, setEnableChunking] = useState(false);
   const [customSplitWords, setCustomSplitWords] = useState('');
-  
+  const [nfeSteps, setNfeSteps] = useState(32);
+
   const [modelPaths, setModelPaths] = useState({
     preprocess: 'models/F5_Preprocess.onnx',
-    transformer: 'models/F5_Transformer.onnx', 
+    transformer: 'models/F5_Transformer.onnx',
     decode: 'models/F5_Decode.onnx',
     vocab: 'models/Emilia_ZH_EN_pinyin/vocab.txt'
   });
 
-  const audioRef = useRef();
-  const fileInputRef = useRef();
-
   const initializeModels = useCallback(async () => {
     if (f5tts) return;
-    
+
     setLoading(true);
     setProgress({ value: 0, message: 'Loading models...' });
-    
+
     try {
       const instance = new F5TTS();
       await instance.loadModels(modelPaths);
-      setF5tts(instance);
+      // setF5tts(instance);
+      f5tts = instance; // Use the global variable instead of state
       setProgress({ value: 100, message: 'Models loaded successfully' });
     } catch (error) {
       console.error('Failed to load models:', error);
@@ -84,87 +255,90 @@ const App = () => {
     }
   }, []);
 
-  const generateSpeech = useCallback(async (audioSrc, refTextSrc, genTextSrc) => {
-    if (!f5tts || !audioSrc || !refTextSrc.trim() || !genTextSrc.trim()) {
+  const handleBasicGeneration = useCallback(async () => {
+    if (!refAudio || !refText.trim() || !genText.trim()) {
       alert('Please ensure models are loaded and all required fields are filled');
       return null;
     }
+    if (!f5tts) {
+      await initializeModels();
+    }
+    setLoading(true);
+    setGeneratedAudio(null);
+    setProgress({ value: 0, message: 'Generating audio...' });
 
     try {
-      const audioData = await f5tts.generateSpeech(
-        audioSrc,
-        refTextSrc,
-        genTextSrc,
-        (progress, message) => {
-          setProgress({ 
-            value: Math.round(progress), 
-            message 
-          });
+      const audioTensor = await f5tts.generateSpeech(
+        {
+          refAudio: refAudio,
+          refText: refText,
+          genText: genText,
+          onProgress: (progress, message) => {
+            setProgress({
+              value: Math.round(progress),
+              message
+            });
+          },
+          speed: speed,
+          nfeSteps: nfeSteps,
+          enableChunking: enableChunking,
         }
       );
-
-      const wavBlob = new RawAudio(audioData, 24000).toBlob();
-      return URL.createObjectURL(wavBlob);
+      const wavBlob = new RawAudio(audioTensor.data, 24000).toBlob();
+      const result = URL.createObjectURL(wavBlob);
+      setGeneratedAudio(result);
+      setProgress({ value: 100, message: 'Generation complete' });
     } catch (error) {
       console.error('Generation failed:', error);
       setProgress({ value: 0, message: `Generation error: ${error.message}` });
-      return null;
+    } finally {
+      setLoading(false);
     }
-  }, [f5tts]);
-
-  const handleBasicGeneration = useCallback(async () => {
-    setLoading(true);
-    setGeneratedAudio(null);
-    
-    const result = await generateSpeech(refAudio, refText, genText);
-    setGeneratedAudio(result);
-    
-    if (result) {
-      setProgress({ value: 100, message: 'Generation complete' });
-    }
-    setLoading(false);
-  }, [generateSpeech, refAudio, refText, genText]);
+  }, [refAudio, refText, genText, speed, nfeSteps, enableChunking]);
 
   const handlePodcastGeneration = useCallback(async () => {
-    if (!speaker1Name || !speaker2Name || !podcastScript) {
+    if (!speaker1Name || !speaker2Name || !podcastScript || !speaker1Audio || !speaker1Text || !speaker2Audio || !speaker2Text) {
       alert('Please fill in all podcast fields');
       return;
     }
-
+    if (!f5tts) {
+      await initializeModels();
+    }
     setLoading(true);
     setPodcastAudio(null);
     setProgress({ value: 0, message: 'Generating podcast...' });
 
     try {
-      // Parse script into speaker segments
-      const speakerPattern = new RegExp(`^(${speaker1Name}|${speaker2Name}):`, 'gm');
-      const segments = podcastScript.split(speakerPattern).filter(s => s.trim());
-      
-      const audioSegments = [];
-      
-      for (let i = 0; i < segments.length; i += 2) {
-        const speaker = segments[i];
-        const text = segments[i + 1]?.trim();
-        
-        if (!text) continue;
-        
-        const isFirstSpeaker = speaker === speaker1Name;
-        const audioSrc = isFirstSpeaker ? speaker1Audio : speaker2Audio;
-        const refTextSrc = isFirstSpeaker ? speaker1Text : speaker2Text;
-        
-        if (audioSrc && refTextSrc) {
-          setProgress({ value: (i / segments.length) * 90, message: `Generating ${speaker}...` });
-          const segmentAudio = await generateSpeech(audioSrc, refTextSrc, text);
-          if (segmentAudio) {
-            audioSegments.push(segmentAudio);
-          }
+      const audioTensor = await generatePodcast(
+        {
+          f5tts: f5tts,
+          script: podcastScript,
+          speakers: {
+            [speaker1Name]: {
+              audio: speaker1Audio,
+              refText: speaker1Text
+            },
+            [speaker2Name]: {
+              audio: speaker2Audio,
+              refText: speaker2Text
+            }
+          },
+          onProgress: (progress, message) => {
+            setProgress({
+              value: Math.round(progress),
+              message
+            });
+          },
+          speed: speed,
+          nfeSteps: nfeSteps,
+          enableChunking: enableChunking
         }
-      }
-      
-      // For demo purposes, just use the first generated segment
-      // In a real implementation, you'd concatenate the audio segments
-      if (audioSegments.length > 0) {
-        setPodcastAudio(audioSegments[0]);
+      );
+
+      const wavBlob = new RawAudio(audioTensor.data, 24000).toBlob();
+      const result = URL.createObjectURL(wavBlob);
+      if (result) {
+        setPodcastAudio(result);
         setProgress({ value: 100, message: 'Podcast generation complete' });
       }
     } catch (error) {
@@ -173,7 +347,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  }, [speaker1Name, speaker2Name, podcastScript, speaker1Audio, speaker1Text, speaker2Audio, speaker2Text, generateSpeech]);
+  }, [speaker1Name, speaker2Name, podcastScript, speaker1Audio, speaker1Text, speaker2Audio, speaker2Text, speed, nfeSteps, enableChunking]);
 
   const addSpeechType = useCallback(() => {
     setSpeechTypes(prev => [...prev, { name: '', audio: null, text: '' }]);
@@ -184,7 +358,7 @@ const App = () => {
   }, []);
 
   const updateSpeechType = useCallback((index, field, value) => {
-    setSpeechTypes(prev => prev.map((item, i) => 
+    setSpeechTypes(prev => prev.map((item, i) =>
       i === index ? { ...item, [field]: value } : item
     ));
   }, []);
@@ -197,17 +371,17 @@ const App = () => {
 
     setLoading(true);
     setEmotionalAudio(null);
-    
+
     // Simple implementation - just use regular audio for now
     // In a real implementation, you'd parse emotional tags and use appropriate audio
-    const result = await generateSpeech(regularAudio, regularText, emotionalText);
+    const result = await f5tts.generateSpeech(regularAudio, regularText, emotionalText);
     setEmotionalAudio(result);
-    
+
     if (result) {
       setProgress({ value: 100, message: 'Emotional speech complete' });
     }
     setLoading(false);
-  }, [generateSpeech, regularAudio, regularText, emotionalText]);
+  }, [regularAudio, regularText, emotionalText]);
 
   const tabs = [
     { id: 'tts', label: 'TTS', icon: '🎤' },
@@ -215,95 +389,6 @@ const App = () => {
     { id: 'emotional', label: 'Multi-Style', icon: '🎭' },
     { id: 'credits', label: 'Credits', icon: '👥' }
   ];
-
-  const TabButton = ({ tab, isActive, onClick }) => (
-    <button
-      onClick={() => onClick(tab.id)}
-      className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
-        isActive 
-          ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg' 
-          : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-      }`}
-    >
-      <span className="text-lg">{tab.icon}</span>
-      {tab.label}
-    </button>
-  );
-
-  const AdvancedSettings = () => (
-    <details className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-6">
-      <summary className="cursor-pointer text-lg font-semibold text-white mb-4">Advanced Settings</summary>
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">Speed</label>
-            <input
-              type="range"
-              min="0.3"
-              max="2.0"
-              step="0.1"
-              value={speed}
-              onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="w-full"
-            />
-            <span className="text-xs text-slate-400">{speed}x</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={removeSlience}
-              onChange={(e) => setRemoveSilence(e.target.checked)}
-              className="rounded"
-            />
-            <label className="text-sm text-slate-300">Remove Silences</label>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-300">Custom Split Words</label>
-          <input
-            type="text"
-            value={customSplitWords}
-            onChange={(e) => setCustomSplitWords(e.target.value)}
-            placeholder="Enter words separated by commas"
-            className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400/50"
-          />
-        </div>
-      </div>
-    </details>
-  );
-
-  const AudioUploadArea = ({ onUpload, label, audio }) => (
-    <div 
-      className="relative border-2 border-dashed border-slate-600/50 rounded-xl p-6 text-center hover:border-purple-400/50 transition-all cursor-pointer bg-slate-700/20"
-      onClick={() => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'audio/*';
-        input.onchange = (e) => onUpload(e.target.files[0]);
-        input.click();
-      }}
-    >
-      <div className="space-y-3">
-        <div className="w-12 h-12 mx-auto bg-gradient-to-r from-cyan-400 to-purple-400 rounded-full flex items-center justify-center">
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-        </div>
-        <div>
-          <p className="font-medium text-white">{label}</p>
-          <p className="text-sm text-slate-400">Click to upload audio</p>
-        </div>
-      </div>
-      {audio && (
-        <div className="mt-3 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
-          <div className="flex items-center gap-2 text-slate-300 text-sm">
-            <div className="w-2 h-2 rounded-full bg-green-400"></div>
-            <span>Audio loaded: {(audio.length / audio.sampleRate).toFixed(2)}s</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -318,7 +403,7 @@ const App = () => {
 
         <div className="max-w-6xl mx-auto space-y-8">
           {/* Model Configuration */}
-          <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
+          {/* <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-400 to-purple-400"></div>
               <h2 className="text-2xl font-semibold text-white">Model Configuration</h2>
@@ -354,7 +439,7 @@ const App = () => {
             >
               {f5tts ? '✓ Models Loaded' : loading ? 'Loading...' : 'Load Models'}
             </button>
-          </div>
+          </div> */}
 
           {/* Tab Navigation */}
           <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-2 shadow-2xl">
@@ -375,13 +460,13 @@ const App = () => {
             {activeTab === 'tts' && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-semibold text-white mb-6">Basic Text-to-Speech</h2>
-                
+
                 <AudioUploadArea
                   onUpload={(file) => handleAudioUpload(file, setRefAudio)}
                   label="Upload Reference Audio"
                   audio={refAudio}
                 />
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-slate-300">Reference Text</label>
@@ -392,7 +477,7 @@ const App = () => {
                       className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/50 resize-none h-24"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-slate-300">Text to Generate</label>
                     <textarea
@@ -404,16 +489,22 @@ const App = () => {
                   </div>
                 </div>
 
-                <AdvancedSettings />
+                <AdvancedSettings
+                  speed={speed} setSpeed={setSpeed}
+                  nfeSteps={nfeSteps} setNfeSteps={setNfeSteps}
+                  removeSilence={removeSilence} setRemoveSilence={setRemoveSilence}
+                  enableChunking={enableChunking} setEnableChunking={setEnableChunking}
+                  customSplitWords={customSplitWords} setCustomSplitWords={setCustomSplitWords}
+                  showAdvancedSettings={showAdvancedSettings} setShowAdvancedSettings={setShowAdvancedSettings}
+                />
 
                 <button
                   onClick={handleBasicGeneration}
-                  disabled={loading || !f5tts || !refAudio || !refText.trim() || !genText.trim()}
-                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${
-                    loading || !f5tts || !refAudio || !refText.trim() || !genText.trim()
-                      ? 'bg-slate-600 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 hover:scale-105 shadow-lg hover:shadow-xl'
-                  }`}
+                  disabled={loading || !refAudio || !refText.trim() || !genText.trim()}
+                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${loading || !refAudio || !refText.trim() || !genText.trim()
+                    ? 'bg-slate-600 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 hover:scale-105 shadow-lg hover:shadow-xl'
+                    }`}
                 >
                   {loading ? 'Generating...' : 'Generate Speech'}
                 </button>
@@ -437,7 +528,7 @@ const App = () => {
             {activeTab === 'podcast' && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-semibold text-white mb-6">Podcast Generation</h2>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-cyan-400">Speaker 1</h3>
@@ -460,7 +551,7 @@ const App = () => {
                       className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 resize-none h-20"
                     />
                   </div>
-                  
+
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-purple-400">Speaker 2</h3>
                     <input
@@ -494,14 +585,22 @@ const App = () => {
                   />
                 </div>
 
+                <AdvancedSettings
+                  speed={speed} setSpeed={setSpeed}
+                  nfeSteps={nfeSteps} setNfeSteps={setNfeSteps}
+                  removeSilence={removeSilence} setRemoveSilence={setRemoveSilence}
+                  enableChunking={enableChunking} setEnableChunking={setEnableChunking}
+                  customSplitWords={customSplitWords} setCustomSplitWords={setCustomSplitWords}
+                  showAdvancedSettings={showAdvancedSettings} setShowAdvancedSettings={setShowAdvancedSettings}
+                />
+
                 <button
                   onClick={handlePodcastGeneration}
-                  disabled={loading || !f5tts || !speaker1Name || !speaker2Name}
-                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${
-                    loading || !f5tts || !speaker1Name || !speaker2Name
-                      ? 'bg-slate-600 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 hover:scale-105 shadow-lg hover:shadow-xl'
-                  }`}
+                  disabled={loading || !speaker1Name || !speaker2Name}
+                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${loading || !speaker1Name || !speaker2Name
+                    ? 'bg-slate-600 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 hover:scale-105 shadow-lg hover:shadow-xl'
+                    }`}
                 >
                   {loading ? 'Generating Podcast...' : 'Generate Podcast'}
                 </button>
@@ -525,7 +624,7 @@ const App = () => {
             {activeTab === 'emotional' && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-semibold text-white mb-6">Multi-Style Speech Generation</h2>
-                
+
                 <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/30">
                   <p className="text-slate-300 text-sm">
                     Use emotion tags in your text like: (Regular) Hello there! (Excited) This is amazing! (Sad) I'm feeling down...
@@ -557,7 +656,7 @@ const App = () => {
                       Add Speech Type
                     </button>
                   </div>
-                  
+
                   {speechTypes.map((speechType, index) => (
                     <div key={index} className="p-4 bg-slate-700/30 rounded-xl border border-slate-600/30 space-y-3">
                       <div className="flex items-center justify-between">
@@ -602,14 +701,22 @@ const App = () => {
                   />
                 </div>
 
+                <AdvancedSettings
+                  speed={speed} setSpeed={setSpeed}
+                  nfeSteps={nfeSteps} setNfeSteps={setNfeSteps}
+                  removeSilence={removeSilence} setRemoveSilence={setRemoveSilence}
+                  enableChunking={enableChunking} setEnableChunking={setEnableChunking}
+                  customSplitWords={customSplitWords} setCustomSplitWords={setCustomSplitWords}
+                  showAdvancedSettings={showAdvancedSettings} setShowAdvancedSettings={setShowAdvancedSettings}
+                />
+
                 <button
                   onClick={handleEmotionalGeneration}
-                  disabled={loading || !f5tts || !regularAudio || !emotionalText.trim()}
-                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${
-                    loading || !f5tts || !regularAudio || !emotionalText.trim()
-                      ? 'bg-slate-600 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 hover:scale-105 shadow-lg hover:shadow-xl'
-                  }`}
+                  disabled={loading || !regularAudio || !emotionalText.trim()}
+                  className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all transform ${loading || !regularAudio || !emotionalText.trim()
+                    ? 'bg-slate-600 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 hover:scale-105 shadow-lg hover:shadow-xl'
+                    }`}
                 >
                   {loading ? 'Generating...' : 'Generate Emotional Speech'}
                 </button>
@@ -647,7 +754,7 @@ const App = () => {
                     <div className="mt-8 p-4 bg-slate-700/30 rounded-xl border border-slate-600/30">
                       <h3 className="text-lg font-semibold text-cyan-400 mb-2">Model Information</h3>
                       <p className="text-sm">
-                        F5-TTS and E2-TTS are state-of-the-art text-to-speech models that support voice cloning with minimal reference audio. 
+                        F5-TTS and E2-TTS are state-of-the-art text-to-speech models that support voice cloning with minimal reference audio.
                         The models support English and Chinese text generation with natural prosody and emotion.
                       </p>
                     </div>
@@ -665,7 +772,7 @@ const App = () => {
                 <span>{progress.value}%</span>
               </div>
               <div className="w-full bg-slate-700/50 rounded-full h-3 overflow-hidden">
-                <div 
+                <div
                   className="bg-gradient-to-r from-cyan-400 to-purple-400 h-full rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${progress.value}%` }}
                 />
