@@ -1,4 +1,7 @@
-export { AudioUploadArea, AudioPlayer } from './AudioManagement';
-export { ProgressBar } from './ProgressBar';
-export { AdvancedSettings } from './AdvancedSettings';
-export { TabNavigation, TabButton } from './TabNavigation';
+export { AdvancedSettings } from "./AdvancedSettings";
+export { AudioInputManager } from "./AudioInput";
+export { AudioPlayer } from "./AudioPlayer";
+export { GenerateButton } from "./GenerateButton";
+export { ProgressBar } from "./ProgressBar";
+export { TabButton, TabNavigation } from "./TabNavigation";
+export { TextInputArea } from "./TextInputArea";

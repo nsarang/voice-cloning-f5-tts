@@ -1,20 +1,19 @@
 // App.jsx - Main orchestrator, much smaller
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
-import { TabNavigation, ProgressBar } from './components';
-import { TTSProvider } from './contexts';
-import { useProgress } from './hooks';
-import { TTSTab, PodcastTab, MultiStyleTab, CreditsTab } from './tabs';
-
+import { ProgressBar, TabNavigation } from "./components";
+import { TTSProvider } from "./contexts";
+// import { TTSTab, PodcastTab, MultiStyleTab, CreditsTab } from './tabs';
+import { CreditsTab, TTSTab } from "./tabs";
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('tts');
+  const [activeTab, setActiveTab] = useState("tts");
 
   const tabs = [
-    { id: 'tts', label: 'TTS', icon: '🎤', component: TTSTab },
-    { id: 'podcast', label: 'Podcast', icon: '🎙️', component: PodcastTab },
-    { id: 'emotional', label: 'Multi-Style', icon: '🎭', component: MultiStyleTab },
-    { id: 'credits', label: 'Credits', icon: '👥', component: CreditsTab }
+    { id: "tts", label: "TTS", icon: "🎤", component: TTSTab },
+    // { id: 'podcast', label: 'Podcast', icon: '🎙️', component: PodcastTab },
+    // { id: 'emotional', label: 'Multi-Style', icon: '🎭', component: MultiStyleTab },
+    { id: "credits", label: "Credits", icon: "👥", component: CreditsTab },
   ];
 
   return (
@@ -30,29 +29,23 @@ const App = () => {
           </div>
 
           <div className="max-w-6xl mx-auto space-y-8">
-            <TabNavigation 
-              tabs={tabs} 
-              activeTab={activeTab} 
-              onTabChange={setActiveTab} 
-            />
-            
+            <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
             <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
               {/* Keep all tabs mounted but hidden - preserves state */}
-              <div style={{ display: activeTab === 'tts' ? 'block' : 'none' }}>
+              <div style={{ display: activeTab === "tts" ? "block" : "none" }}>
                 <TTSTab />
               </div>
-              <div style={{ display: activeTab === 'podcast' ? 'block' : 'none' }}>
+              {/* <div style={{ display: activeTab === 'podcast' ? 'block' : 'none' }}>
                 <PodcastTab />
               </div>
               <div style={{ display: activeTab === 'emotional' ? 'block' : 'none' }}>
                 <MultiStyleTab />
-              </div>
-              <div style={{ display: activeTab === 'credits' ? 'block' : 'none' }}>
+              </div> */}
+              <div style={{ display: activeTab === "credits" ? "block" : "none" }}>
                 <CreditsTab />
               </div>
             </div>
-
-            <ProgressBar />
           </div>
         </div>
       </div>

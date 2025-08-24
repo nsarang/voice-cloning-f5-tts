@@ -2,10 +2,12 @@
  * F5-TTS implementation matching Python ONNX version exactly
  */
 
-import * as ort from 'onnxruntime-web';
-import { Tensor } from './tjs/utils/torch.js';
-import { createInferenceSession, deviceToExecutionProviders } from './tjs/backends/onnx.js';
-import { calculateRMS, normalizeToInt16 } from './audio.js';
+import * as ort from "onnxruntime-web";
+
+import { calculateRMS, normalizeToInt16 } from "./audio.js";
+import { createInferenceSession, deviceToExecutionProviders } from "./tjs/backends/onnx.js";
+import { Tensor } from "./tjs/utils/torch.js";
+import * as torch from "./tjs/utils/torch.js";
 
 export class F5TTS {
   constructor() {
@@ -19,59 +21,56 @@ export class F5TTS {
   }
 
   async loadModels(modelPaths) {
-    // Configure ONNX Runtime with WebGPU support
-    // const providers = deviceToExecutionProviders('auto');
-
-    let providers = deviceToExecutionProviders('auto');
+    const providers = deviceToExecutionProviders("auto");
 
     // If WebGPU is detected, configure it for high performance
-    const webgpuProviderIndex = providers.findIndex(p =>
-      (typeof p === 'string' && p === 'webgpu') ||
-      (typeof p === 'object' && p.name === 'webgpu')
+    const webgpuProviderIndex = providers.findIndex(
+      (p) =>
+        (typeof p === "string" && p === "webgpu") || (typeof p === "object" && p.name === "webgpu")
     );
 
     if (webgpuProviderIndex !== -1) {
       try {
         const adapter = await navigator.gpu.requestAdapter({
-          powerPreference: 'high-performance',
-          forceFallbackAdapter: false
+          powerPreference: "high-performance",
+          forceFallbackAdapter: false,
         });
 
         if (adapter) {
           const device = await adapter.requestDevice();
           providers[webgpuProviderIndex] = {
-            name: 'webgpu',
+            name: "webgpu",
             device: device,
-            powerPreference: 'high-performance'
+            powerPreference: "high-performance",
           };
-          console.log('WebGPU configured with high-performance adapter');
+          console.log("WebGPU configured with high-performance adapter");
         }
       } catch (e) {
-        console.log('High-performance GPU setup failed, using default WebGPU');
+        console.log("High-performance GPU setup failed, using default WebGPU");
       }
     }
 
     console.log("Detected providers:", providers);
     const sessionOptions = {
       executionProviders: providers,
-      graphOptimizationLevel: 'all',
+      graphOptimizationLevel: "all",
       enableMemPattern: true,
       enableCpuMemArena: true,
       extra: {
         session: {
           intra_op_num_threads: 8,
           inter_op_num_threads: 8,
-          allow_profiling: false
-        }
-      }
+          allow_profiling: false,
+        },
+      },
     };
 
     // CPU-only options for preprocess and decode
     const cpuOptions = {
-      executionProviders: ['cpu'],
-      graphOptimizationLevel: 'all',
+      executionProviders: ["cpu"],
+      graphOptimizationLevel: "all",
       enableMemPattern: true,
-      enableCpuMemArena: true
+      enableCpuMemArena: true,
     };
 
     try {
@@ -85,34 +84,37 @@ export class F5TTS {
       const vocabText = await vocabResponse.text();
       this.vocabMap = {};
 
-      vocabText.split('\n').forEach((char, idx) => {
+      vocabText.split("\n").forEach((char, idx) => {
         if (char.trim()) {
           this.vocabMap[char.trim()] = idx;
         }
       });
 
-      console.log('Models loaded successfully');
+      console.log("Models loaded successfully");
     } catch (error) {
       throw new Error(`Failed to load models: ${error.message}`);
     }
   }
 
   tokenizeText(text) {
-    const chars = text.toLowerCase().split('');
-    const tokens = chars.map(char => this.vocabMap[char] || 0);
+    const chars = text.toLowerCase().split("");
+    const tokens = chars.map((char) => this.vocabMap[char] || 0);
     return tokens;
   }
 
   splitTextIntoBatches(text, maxChars = 200) {
     if (new Blob([text]).size <= maxChars) return [text];
 
-    if (!text.match(/[.!?]$/)) text += '.';
+    if (!text.match(/[.!?]$/)) text += ".";
 
-    const sentences = text.split(/([.!?])/).reduce((acc, curr, i) => {
-      if (i % 2 === 0) acc.push(curr);
-      else acc[acc.length - 1] += curr;
-      return acc;
-    }, []).filter(s => s.trim());
+    const sentences = text
+      .split(/([.!?])/)
+      .reduce((acc, curr, i) => {
+        if (i % 2 === 0) acc.push(curr);
+        else acc[acc.length - 1] += curr;
+        return acc;
+      }, [])
+      .filter((s) => s.trim());
 
     const batches = [];
     let current = "";
@@ -130,9 +132,9 @@ export class F5TTS {
     return batches;
   }
 
-  async inference(refAudio, refText, genText, onProgress, speed, nfeSteps) {
+  async inference({ refAudio, refText, genText, onProgress, speed, nfeSteps }) {
     if (!this.sessionA || !this.sessionB || !this.sessionC) {
-      throw new Error('Models not loaded');
+      throw new Error("Models not loaded");
     }
 
     // Prepare audio
@@ -155,20 +157,21 @@ export class F5TTS {
     // Prepare text
     const combinedText = refText + " " + genText;
     const textTokens = this.tokenizeText(combinedText);
-    const textTensor = new Tensor('int32', Int32Array.from(textTokens), [1, textTokens.length]);
+    const textTensor = new Tensor("int32", Int32Array.from(textTokens), [1, textTokens.length]);
 
     // Calculate duration - matching Python
     const refAudioLen = Math.floor(refAudio.size / this.hopLength);
     const refTextLen = refText.length;
     const genTextLen = genText.length;
-    const duration = refAudioLen + Math.trunc(refAudioLen / (refTextLen + 1) * genTextLen / speed);
-    const durationTensor = new Tensor('int64', new BigInt64Array([BigInt(duration)]), [1]);
+    const duration =
+      refAudioLen + Math.trunc(((refAudioLen / (refTextLen + 1)) * genTextLen) / speed);
+    const durationTensor = new Tensor("int64", new BigInt64Array([BigInt(duration)]), [1]);
 
     // Stage A: Preprocess - exact input names from Python
     const preprocessInputs = {
       [this.sessionA.inputNames[0]]: audioTensor.ort,
       [this.sessionA.inputNames[1]]: textTensor.ort,
-      [this.sessionA.inputNames[2]]: durationTensor.ort
+      [this.sessionA.inputNames[2]]: durationTensor.ort,
     };
 
     const preprocessOutputs = await this.sessionA.run(preprocessInputs);
@@ -183,7 +186,7 @@ export class F5TTS {
     const refSignalLen = preprocessOutputs[this.sessionA.outputNames[7]];
 
     // Stage B: Transformer NFE steps - exact Python loop
-    let timeStep = new ort.Tensor('int32', new Int32Array([0]), [1]);
+    let timeStep = new ort.Tensor("int32", new Int32Array([0]), [1]);
 
     for (let step = 0; step < nfeSteps - 1; step++) {
       const transformerInputs = {
@@ -194,7 +197,7 @@ export class F5TTS {
         [this.sessionB.inputNames[4]]: ropeSinK,
         [this.sessionB.inputNames[5]]: catMelText,
         [this.sessionB.inputNames[6]]: catMelTextDrop,
-        [this.sessionB.inputNames[7]]: timeStep
+        [this.sessionB.inputNames[7]]: timeStep,
       };
 
       const transformerOutputs = await this.sessionB.run(transformerInputs);
@@ -202,20 +205,23 @@ export class F5TTS {
       timeStep = transformerOutputs[this.sessionB.outputNames[1]];
 
       if (onProgress) {
-        onProgress(((step + 1) / nfeSteps) * 100, `NFE Step ${step + 1}/${nfeSteps}`);
+        onProgress({
+          value: ((step + 1) / nfeSteps) * 100,
+          message: `NFE Step ${step + 1}/${nfeSteps}`,
+        });
       }
     }
 
     // Stage C: Decode
     const decodeInputs = {
       [this.sessionC.inputNames[0]]: noise,
-      [this.sessionC.inputNames[1]]: refSignalLen
+      [this.sessionC.inputNames[1]]: refSignalLen,
     };
 
     const decodeOutputs = await this.sessionC.run(decodeInputs);
     const generatedSignal = decodeOutputs[this.sessionC.outputNames[0]];
 
-    let normalizedTensor = new Tensor(generatedSignal).to('float32').div(32767.0).reshape(-1);
+    let normalizedTensor = new Tensor(generatedSignal).to("float32").div(32767.0).reshape(-1);
 
     // Revert back to original RMS
     if (refRMS < this.targetRMS) {
@@ -238,10 +244,13 @@ export class F5TTS {
    */
   async generateSpeech({ refAudio, refText, genText, onProgress, speed, nfeSteps, bChunking }) {
     if (!bChunking) {
-      return await this.inference(refAudio, refText, genText, onProgress, speed, nfeSteps);
+      return await this.inference({ refAudio, refText, genText, onProgress, speed, nfeSteps });
     }
 
-    const maxChars = Math.trunc(new TextEncoder().encode(refText).length / (refAudio.length / refAudio.sampleRate) * (30 - refAudio.length / refAudio.sampleRate));
+    const maxChars = Math.trunc(
+      (new TextEncoder().encode(refText).length / (refAudio.length / refAudio.sampleRate)) *
+        (30 - refAudio.length / refAudio.sampleRate)
+    );
     const textBatches = this.splitTextIntoBatches(genText, Math.max(maxChars, 100));
 
     // Batch processing
@@ -250,19 +259,21 @@ export class F5TTS {
     let current = 0;
 
     for (let i = 0; i < textBatches.length; i++) {
-      const result = await this.inference(
+      const result = await this.inference({
         refAudio,
         refText,
-        textBatches[i],
-        (progress, message) => {
+        genText: textBatches[i],
+        onProgress: (progress, message) => {
           if (onProgress) {
-            const overall = (current + progress) / total * 100;
-            onProgress(overall, `Batch ${i + 1}/${textBatches.length}: ${message}`);
+            onProgress({
+              value: ((current + progress) / total) * 100,
+              message: `Batch ${i + 1}/${textBatches.length}: ${message}`,
+            });
           }
         },
         speed,
-        nfeSteps
-      );
+        nfeSteps,
+      });
 
       results.push(result);
       current += nfeSteps;
