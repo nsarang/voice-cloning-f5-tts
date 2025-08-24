@@ -5,6 +5,8 @@ import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import globals from "globals";
+import typescript from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
 
 export default [
   js.configs.recommended,
@@ -15,10 +17,12 @@ export default [
       "react-hooks": reactHooks,
       "jsx-a11y": jsxA11y,
       "simple-import-sort": simpleImportSort,
+      "@typescript-eslint": typescript,
     },
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
+      parser: tsParser,
       parserOptions: {
         ecmaFeatures: {
           jsx: true,
@@ -36,8 +40,7 @@ export default [
     },
     rules: {
       // core
-      "no-unused-vars": "off",
-      // "no-console": "warn",
+      "no-unused-vars": "off", // replaced by TS rule
       "prefer-const": "error",
 
       // react
@@ -52,6 +55,15 @@ export default [
       // sorting
       "simple-import-sort/imports": "error",
       "simple-import-sort/exports": "error",
+
+      // TypeScript-specific rules
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/explicit-module-boundary-types": "off", // optional for React projects
+      "@typescript-eslint/no-explicit-any": "warn", // avoid using `any`
+      "@typescript-eslint/consistent-type-imports": "error", // enforce consistent type imports
+      "@typescript-eslint/no-empty-function": "warn", // avoid empty functions
+      "@typescript-eslint/no-inferrable-types": "warn", // avoid unnecessary type annotations
+      "@typescript-eslint/ban-ts-comment": "warn", // avoid unnecessary `@ts-ignore` comments
     },
   },
   prettier,
