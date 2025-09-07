@@ -1,57 +1,55 @@
-import React from 'react';
+import React from "react";
+
+import { DescriptionBox } from "./utils/DescriptionBox";
+import { SectionHeader } from "./utils/SectionHeader";
 
 export const CreditsTab = () => {
   const contributors = [
     {
-      name: 'F5-TTS Team',
-      role: 'Original F5-TTS model and research',
-      link: 'https://github.com/SWivid/F5-TTS'
+      name: "SWivid/F5-TTS",
+      role: "Original F5-TTS model and research. The architecture is a transformer model with conditional flow matching objective.",
+      link: "https://github.com/SWivid/F5-TTS",
     },
     {
-      name: 'E2-TTS Team',
-      role: 'E2-TTS model development',
-      link: null
+      name: "mrfakename/E2-F5-TTS",
+      role: "The Python demo of E2-F5-TTS using Gradio.",
+      link: "https://huggingface.co/spaces/mrfakename/E2-F5-TTS",
     },
     {
-      name: 'mrfakename',
-      role: 'Original online demo implementation',
-      link: null
+      name: "DakeQQ/F5-TTS-ONNX",
+      role: "ONNX conversion and optimization for web deployment. This kind of conversion is not trivial and requires source code modifications.",
+      link: "https://github.com/DakeQQ/F5-TTS-ONNX",
     },
     {
-      name: 'RootingInLoad',
-      role: 'Podcast generation feature',
-      link: null
+      name: "xenova/whisper-web",
+      role: "I learned a lot from the Whisper Web implementation for creating my template. Xenova's work in the WebML space has been second to none.",
+      link: "https://github.com/xenova/whisper-web",
     },
     {
-      name: 'Transformers.js',
-      role: 'JavaScript ML framework',
-      link: 'https://github.com/xenova/transformers.js'
+      name: "onnx-community/distil-small.en",
+      role: "ONNX version of the Distil Whisper transcription model.",
+      link: "https://huggingface.co/onnx-community/distil-small.en",
     },
-    {
-      name: 'ONNX Runtime Web',
-      role: 'WebAssembly inference',
-      link: 'https://onnxruntime.ai/docs/get-started/with-javascript.html'
-    }
   ];
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-semibold text-white mb-6">Credits</h2>
-      
+      <SectionHeader title="Credits" />
+
       <div className="prose prose-invert max-w-none">
         <div className="space-y-6 text-slate-300">
-          <p className="text-lg">
+          <DescriptionBox>
             This F5-TTS Web implementation is built upon the work of many contributors:
-          </p>
-          
+          </DescriptionBox>
+
           <div className="grid gap-4">
             {contributors.map((contributor, index) => (
               <ContributorCard key={index} {...contributor} />
             ))}
           </div>
-          
+
           <ModelInfoSection />
-          
+
           <TechnicalStack />
         </div>
       </div>
@@ -60,10 +58,10 @@ export const CreditsTab = () => {
 };
 
 const ContributorCard = ({ name, role, link }) => (
-  <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/30 hover:bg-slate-700/40 transition-all">
+  <div className="bg-slate-700/30 rounded-xl p-4 border border-slate-600/30 hover:shadow-lg hover:bg-slate-700/50 transition-all">
     <div className="flex items-center justify-between">
       <div>
-        <h3 className="text-lg font-semibold text-cyan-400">{name}</h3>
+        <h3 className="text-base font-semibold text-cyan-400">{name}</h3>
         <p className="text-sm text-slate-400">{role}</p>
       </div>
       {link && (
@@ -74,8 +72,12 @@ const ContributorCard = ({ name, role, link }) => (
           className="text-purple-400 hover:text-purple-300 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
           </svg>
         </a>
       )}
@@ -83,31 +85,33 @@ const ContributorCard = ({ name, role, link }) => (
   </div>
 );
 
+// ...existing code...
+
 const ModelInfoSection = () => (
-  <div className="mt-8 p-6 bg-gradient-to-r from-slate-700/30 to-purple-900/20 rounded-xl border border-slate-600/30">
-    <h3 className="text-xl font-semibold text-cyan-400 mb-3">Model Information</h3>
-    <div className="space-y-3 text-sm">
+  <div className="mt-8">
+    <h3 className="text-xl font-semibold text-purple-400 mb-4">Model Information</h3>
+    <div className="space-y-4 text-sm text-slate-300">
       <p>
-        <strong className="text-white">F5-TTS and E2-TTS</strong> are state-of-the-art text-to-speech models 
-        that support voice cloning with minimal reference audio.
+        <strong className="text-white">F5-TTS</strong>: A fully nonautoregressive TTS system using
+        flow matching with Diffusion Transformer (DiT). Eliminates need for duration models, text
+        encoders, or phoneme alignment by padding text with filler tokens to match speech length,
+        followed by denoising for generation.
       </p>
-      <ul className="space-y-2 list-disc list-inside ml-4">
-        <li>Zero-shot voice cloning with 5-15 seconds of reference audio</li>
-        <li>Support for English and Chinese text generation</li>
-        <li>Natural prosody and emotion preservation</li>
-        <li>Real-time generation capabilities</li>
-      </ul>
+      <p>
+        <strong className="text-white">Transcription Model</strong>: ONNX-optimized Distil Whisper
+        for real-time speech-to-text.
+      </p>
     </div>
   </div>
 );
 
+// ...existing code...
+
 const TechnicalStack = () => {
   const technologies = [
-    { name: 'React', version: '18.x', purpose: 'UI Framework' },
-    { name: 'ONNX Runtime', version: 'Web', purpose: 'Model Inference' },
-    { name: 'WebGPU', version: 'Latest', purpose: 'GPU Acceleration' },
-    { name: 'Tailwind CSS', version: '3.x', purpose: 'Styling' },
-    { name: 'Web Audio API', version: 'Native', purpose: 'Audio Processing' }
+    { name: "ONNX Runtime", version: "Web", purpose: "Model Inference" },
+    { name: "React", version: "19.x", purpose: "UI Framework" },
+    { name: "Tailwind CSS", version: "3.x", purpose: "Styling" },
   ];
 
   return (
@@ -115,7 +119,7 @@ const TechnicalStack = () => {
       <h3 className="text-xl font-semibold text-purple-400 mb-4">Technical Stack</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {technologies.map((tech, index) => (
-          <div 
+          <div
             key={index}
             className="bg-slate-800/40 rounded-lg px-4 py-3 border border-slate-700/50"
           >

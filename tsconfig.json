@@ -2,17 +2,17 @@
   "compilerOptions": {
     "moduleResolution": "Node",
     "baseUrl": "src",
-    "paths": {
-      "components/*": ["components/*"],
-      "hooks/*": ["hooks/*"]
-    },
     "target": "ESNext",
     "module": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@/logging": ["logging.js"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
