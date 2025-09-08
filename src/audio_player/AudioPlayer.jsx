@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 
+import Logger from "../logging";
+
+const LOG = Logger.get("AudioPlayer");
+
 export const AudioPlayer = ({ audioUrl, filename = null, title = true }) => {
   const waveformRef = useRef(null);
   const wavesurfer = useRef(null);
@@ -24,7 +28,7 @@ export const AudioPlayer = ({ audioUrl, filename = null, title = true }) => {
           sampleRate: `${(sampleRate / 1000).toFixed(1)} kHz`,
         });
       } catch (error) {
-        console.error("Error decoding audio metadata:", error);
+        LOG.error("Error decoding audio metadata:", error);
       }
     };
 

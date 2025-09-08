@@ -3,6 +3,7 @@ import React, { useCallback, useState } from "react";
 import { AudioInput, useAudioInput } from "../audio_input";
 import { AudioPlayer } from "../audio_player";
 import { emptySegment } from "../core/audio";
+import { handleAudioReady, handleTranscription, podcastGeneration } from "../core/inference";
 import { RawAudio } from "../core/tjs/utils/audio";
 import * as torch from "../core/tjs/utils/torch";
 import { useModel } from "../engine/ModelContext";
@@ -11,7 +12,6 @@ import { Button, ProgressBar, TextInput, useObjectURLManager, useProgress } from
 import { AdvancedSettings, useAdvancedSettings } from "./utils/AdvancedSettings";
 import { DEFAULT_SETTINGS } from "./utils/defaults";
 import { DescriptionBox } from "./utils/DescriptionBox";
-import { handleAudioReady, handleTranscription, podcastGeneration } from "./utils/inference";
 import { SectionHeader } from "./utils/SectionHeader";
 
 const LOG = Logger.get("PodcastTab");

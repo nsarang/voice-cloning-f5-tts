@@ -21,10 +21,11 @@ class ModelInstance {
     this._worker = null;
     LOG.debug(`Created ModelInstance of type ${cls} with config`, config);
 
-    // Return a Proxy that intercepts all property access
-    return new Proxy(this, {
+    // Return a Proxy that routes method calls to the adapter
+    // Similar to Python's __getattr__
+    this._proxy = new Proxy(this, {
       get(target, prop) {
-        if (prop === "on" || prop === "off" || prop === "dispose" || prop.startsWith("_")) {
+        if (prop in target) {
           return target[prop];
         }
 
@@ -32,6 +33,7 @@ class ModelInstance {
         return (...args) => target._callAdapter(prop, args);
       },
     });
+    return this._proxy;
   }
 
   async _callAdapter(method, args) {
@@ -62,7 +64,7 @@ class ModelInstance {
       this._listeners.set(eventType, new Set());
     }
     this._listeners.get(eventType).add(handler);
-    return this;
+    return this._proxy;
   }
 
   /**
@@ -73,7 +75,7 @@ class ModelInstance {
    */
   off(eventType, handler) {
     this._listeners.get(eventType)?.delete(handler);
-    return this;
+    return this._proxy;
   }
 
   resetListeners(eventType) {
@@ -82,7 +84,7 @@ class ModelInstance {
     } else {
       this._listeners.clear();
     }
-    return this;
+    return this._proxy;
   }
 
   /**
@@ -130,7 +132,6 @@ export function ModelProvider({ children }) {
     if (!models.current.has(key)) {
       models.current.set(key, new ModelInstance(adapterType, config));
     }
-
     return models.current.get(key);
   };
 

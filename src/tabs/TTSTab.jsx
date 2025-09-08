@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 
 import { AudioInput, useAudioInput } from "../audio_input";
 import { AudioPlayer } from "../audio_player";
+import { batchInference, handleAudioReady, handleTranscription } from "../core/inference";
 import { RawAudio } from "../core/tjs/utils/audio";
 import { useModel } from "../engine/ModelContext";
 import Logger from "../logging";
@@ -9,7 +10,6 @@ import { Button, ProgressBar, TextInput, useObjectURLManager, useProgress } from
 import { AdvancedSettings, useAdvancedSettings } from "./utils/AdvancedSettings";
 import { DEFAULT_SETTINGS } from "./utils/defaults";
 import { DescriptionBox } from "./utils/DescriptionBox";
-import { batchInference, handleAudioReady, handleTranscription } from "./utils/inference";
 import { SectionHeader } from "./utils/SectionHeader";
 
 const LOG = Logger.get("TTSTab");
@@ -134,7 +134,7 @@ Granted, the journey is fraught with challenges, but the young wizard is determi
           label="Reference Text"
           value={refText}
           onChange={setRefText}
-          placeholder="Transcription of the reference audio. Leave blank to auto-transcribe."
+          placeholder="Optional: Transcription of the reference audio. Leave blank to auto-transcribe."
           accentColor="orange"
           icon="📝"
           multiline={true}

@@ -17,8 +17,7 @@ Comlink.expose({
     LOG.debug(`Request to create adapter of type ${adapterType} with config`, config);
     const AdapterClass = adapterRegistry[adapterType];
     if (!AdapterClass) throw new Error(`Unknown adapter type: ${adapterType}`);
-
-    const adapter = AdapterClass({
+    const adapter = new AdapterClass({
       ...config,
       emit: eventProxy,
     });

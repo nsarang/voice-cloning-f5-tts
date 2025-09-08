@@ -1,3 +1,7 @@
+import Logger from "../logging";
+
+const LOG = Logger.get("Utils");
+
 function optimalBreaks(parts, maxLength, exponent = 2) {
   const n = parts.length;
   const dp = Array(n).fill(Infinity);
@@ -74,5 +78,65 @@ export function splitTextIntoBatches(text, maxChars = 200, splitWords = null) {
   return breaks.map((s, i) => {
     const t = breaks[i + 1] ?? atomicParts.length;
     return atomicParts.slice(s, t).join(" ");
+  });
+}
+
+export function splitGenText({
+  genText,
+  refText,
+  refAudioLength,
+  maxOutputLength,
+  speed = 1,
+  splitWords = [],
+  maxChars = Infinity,
+}) {
+  const density = new TextEncoder().encode(refText).length / refAudioLength;
+  LOG.debug(
+    `Reference text is ${new TextEncoder().encode(refText).length} chars for ${refAudioLength} seconds of audio.`
+  );
+  LOG.debug(`Text density is ${density} chars/sec`);
+  const estMaxChars = density * (maxOutputLength - refAudioLength) * speed;
+  LOG.debug("Estimated max chars per segment:", estMaxChars);
+  return splitTextIntoBatches(genText, Math.min(estMaxChars, maxChars), splitWords);
+}
+
+export function downloadProgressTracker(onProgress) {
+  const downloads = {};
+
+  return (info) => {
+    const { status, file, loaded, total } = info;
+
+    if (!(status === "progress" || status === "done")) {
+      return;
+    }
+
+    if (!downloads[file]) {
+      downloads[file] = { loaded: 0, total: 0 };
+    }
+
+    if (status === "progress") {
+      downloads[file].loaded = loaded;
+      downloads[file].total = total;
+    } else if (status === "done") {
+      downloads[file].loaded = downloads[file].total;
+    }
+
+    const totalLoaded = Object.values(downloads).reduce((sum, d) => sum + d.loaded, 0);
+    const totalSize = Object.values(downloads).reduce((sum, d) => sum + d.total, 0);
+
+    onProgress({
+      numberOfFiles: Object.keys(downloads).length,
+      currentMB: totalLoaded / (1024 * 1024),
+      totalMB: totalSize / (1024 * 1024),
+    });
+  };
+}
+
+export function defaultDownloadProgressCallback(emit, messagePrefix = "Downloading model files") {
+  return downloadProgressTracker(({ numberOfFiles, currentMB, totalMB }) => {
+    emit("download", {
+      value: totalMB ? (currentMB / totalMB) * 100 : 0,
+      message: `${messagePrefix}... (${currentMB.toFixed(1)} MB of ${totalMB.toFixed(1)} MB)`,
+    });
   });
 }

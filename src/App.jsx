@@ -24,6 +24,20 @@ const App = () => {
               F5-TTS Web
             </h1>
             <p className="text-slate-300 text-lg">Neural Voice Cloning with Real-Time Generation</p>
+            <div className="flex justify-center gap-2 mt-3 flex-wrap">
+              <span className="text-xs bg-slate-700/50 text-cyan-300 px-2 py-1 rounded-full">
+                100% In-Browser
+              </span>
+              <span className="text-xs bg-slate-700/50 text-green-300 px-2 py-1 rounded-full">
+                Free
+              </span>
+              <span className="text-xs bg-slate-700/50 text-purple-300 px-2 py-1 rounded-full">
+                Open Source
+              </span>
+              <span className="text-xs bg-slate-700/50 text-amber-300 px-2 py-1 rounded-full">
+                Works Offline
+              </span>
+            </div>
           </div>
 
           {/* Tabs Layout */}

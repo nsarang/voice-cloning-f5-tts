@@ -1,7 +1,12 @@
-import { loadAudio, remove_silence } from "../../core/audio";
-import * as torch from "../../core/tjs/utils/torch";
-import { splitTextIntoBatches } from "../../core/utils";
-import Logger from "../../logging";
+/**
+ * Core inference utilities for TTS application.
+ * Handles audio processing, transcription, and batch TTS inference.
+ */
+
+import Logger from "../logging";
+import { loadAudio, remove_silence } from "./audio";
+import * as torch from "./tjs/utils/torch";
+import { splitGenText } from "./utils";
 
 const LOG = Logger.get("InferenceUtils");
 
@@ -40,15 +45,17 @@ export const handleAudioReady = async (file) => {
 export const handleTranscription = async (audioTensor, getOrCreateModel, updateProgress) => {
   if (!audioTensor) throw new Error("No audio data provided for transcription");
 
-  const model = getOrCreateModel({ adapterType: "transcriber", id: "transcriptionModel" }).on(
-    "progress",
-    updateProgress
-  );
+  const model = getOrCreateModel({
+    adapterType: "transcriber",
+    id: "transcriptionModel",
+  }).resetListeners();
+
+  ["initialize", "download", "inference"].forEach((event) => model.on(event, updateProgress));
 
   await model.initialize();
 
-  const transcription = await model.process({
-    audioData: audioTensor.data,
+  const transcription = await model.inference({
+    audioData: audioTensor,
     sampleRate: 24000,
   });
   return transcription;
@@ -64,16 +71,17 @@ export async function batchInference({ segments, settings, onProgress, getOrCrea
       // repoName: "nsarang/F5-TTS-ONNX",
       // rootPath: `${window.location.origin}`,
     },
-  }).on("progress", onProgress);
+  }).resetListeners();
 
-  LOG.debug("Initializing model...");
+  model.on("initialize", onProgress);
+  model.on("download", onProgress);
+
   await model.initialize();
-  LOG.debug("Model initialized.");
 
   // Break segments into slices
   const segmentsBroken = segments.map(({ refAudio, refText, genText }) => {
     const textBatches = settings.enableChunking
-      ? splitText({
+      ? splitGenText({
           genText,
           refText,
           refAudioLength: refAudio.size / 24000,
@@ -92,18 +100,18 @@ export async function batchInference({ segments, settings, onProgress, getOrCrea
   const totalSegments = segmentsBroken.flat().length;
   let processedSegments = 0;
 
-  LOG.debug(`Total segments to process: ${totalSegments}`);
-  LOG.debug(
-    "The genText segments are:",
-    segmentsBroken.map((s) => s.map((x) => x.genText))
-  );
-
-  model.off("progress", onProgress).on("progress", ({ value, message }) => {
+  model.on("inference", ({ value, message }) => {
     onProgress({
       value: ((processedSegments + value / 100) / totalSegments) * 100,
       message,
     });
   });
+
+  LOG.debug(`Total segments to process: ${totalSegments}`);
+  LOG.debug(
+    "The genText segments are:",
+    segmentsBroken.map((s) => s.map((x) => x.genText))
+  );
 
   onProgress({ value: 0, message: "Generating audio..." });
   const results = [];
@@ -112,7 +120,7 @@ export async function batchInference({ segments, settings, onProgress, getOrCrea
     for (const { refAudio, refText, genText } of slices) {
       LOG.debug("Processing segment:", { refText, genText });
       segmentResults.push(
-        await model.process({
+        await model.inference({
           refAudio,
           refText,
           genText,
@@ -172,23 +180,4 @@ export async function podcastGeneration({ script, speakers, ...kwargs }) {
   LOG.debug("Segments:", segments);
   const results = await batchInference({ segments, ...kwargs });
   return results;
-}
-
-function splitText({
-  genText,
-  refText,
-  refAudioLength,
-  maxOutputLength,
-  speed = 1,
-  splitWords = [],
-  maxChars = Infinity,
-}) {
-  const density = new TextEncoder().encode(refText).length / refAudioLength;
-  LOG.debug(
-    `Reference text is ${new TextEncoder().encode(refText).length} chars for ${refAudioLength} seconds of audio.`
-  );
-  LOG.debug(`Text density is ${density} chars/sec`);
-  const estMaxChars = density * (maxOutputLength - refAudioLength) * speed;
-  LOG.debug("Estimated max chars per segment:", estMaxChars);
-  return splitTextIntoBatches(genText, Math.min(estMaxChars, maxChars), splitWords);
 }

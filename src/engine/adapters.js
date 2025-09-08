@@ -1,4 +1,4 @@
-import { F5TTSAdapter, Transcriber } from "../core";
+import { F5TTS, Transcriber } from "../core";
 
 export class ModelAdapterBase {
   constructor({ emit = () => {}, ...config }) {
@@ -20,17 +20,6 @@ export class ModelAdapterBase {
 }
 
 export const adapterRegistry = {
-  f5tts: (config, onProgress) => new F5TTSAdapter(config, onProgress),
-  transcriber: (config, onProgress) => new Transcriber(config, onProgress),
-};
-
-export const MESSAGES = {
-  INITIALIZE: "initialize",
-  PROCESS: "process",
-  EVENT: "event",
-  DISPOSE: "dispose",
-  READY: "ready",
-  RESULT: "result",
-  PROGRESS: "progress",
-  ERROR: "error",
+  f5tts: F5TTS,
+  transcriber: Transcriber,
 };

@@ -7,22 +7,26 @@ import * as ort from "onnxruntime-web";
 import Logger from "../logging";
 import { calculateRMS, normalizeToInt16 } from "./audio";
 import { createInferenceSession, deviceToExecutionProviders } from "./tjs/backends/onnx";
-import { isWebGpuFp16Supported } from "./tjs/utils/dtypes";
+import { isWebGpuFp16Supported } from "./tjs/utils/devices";
 import { getModelFile, getModelText } from "./tjs/utils/hub";
 import { Tensor } from "./tjs/utils/torch";
 import * as torch from "./tjs/utils/torch";
+import { defaultDownloadProgressCallback } from "./utils";
 
 const LOG = Logger.get("F5TTS");
 
 export class F5TTS {
-  constructor({ repoName = "", rootPath = "", useFP16 = true }) {
+  constructor({ repoName = "", rootPath = "", useFP16 = true, emit = LOG.trace }) {
     this.repoName = repoName;
     this.rootPath = rootPath;
     this.useFP16 = useFP16;
-    this.sessionA = null;
-    this.sessionB = null;
-    this.sessionC = null;
-    this.vocabMap = null;
+    this.emit = emit;
+
+    this.sessions = {
+      encoder: null,
+      transformer: null,
+      decoder: null,
+    };
     this.hopLength = 256;
     this.targetSampleRate = 24000;
     this.targetRMS = 0.1;
@@ -36,7 +40,8 @@ export class F5TTS {
     };
   }
 
-  async load() {
+  async initialize() {
+    this.emit("initialize", { value: 0, message: "Loading TTS model..." });
     const providers = deviceToExecutionProviders("auto");
     let transformerPath = this.useFP16
       ? this.modelPaths.transformer_fp16
@@ -75,9 +80,6 @@ export class F5TTS {
     }
 
     LOG.debug("Detected providers:", providers);
-    // if (!providers.includes("cpu")) {
-    //   providers.push("cpu");
-    // }
 
     const sessionOptions = {
       executionProviders: providers,
@@ -97,18 +99,24 @@ export class F5TTS {
     const sessionConfig = {};
 
     // Load models
-    this.sessionA = await createInferenceSession(
-      await getModelFile(this.repoName, this.modelPaths.preprocess),
+    const progressCallback = defaultDownloadProgressCallback(this.emit);
+    const [encoderModel, transformerModel, decoderModel] = await Promise.all(
+      [this.modelPaths.preprocess, transformerPath, this.modelPaths.decode].map((path) =>
+        getModelFile(this.repoName, path, true, { progress_callback: progressCallback })
+      )
+    );
+    this.sessions.encoder = await createInferenceSession(
+      encoderModel,
       sessionOptions,
       sessionConfig
     );
-    this.sessionB = await createInferenceSession(
-      await getModelFile(this.repoName, transformerPath),
+    this.sessions.transformer = await createInferenceSession(
+      transformerModel,
       sessionOptions,
       sessionConfig
     );
-    this.sessionC = await createInferenceSession(
-      await getModelFile(this.repoName, this.modelPaths.decode),
+    this.sessions.decoder = await createInferenceSession(
+      decoderModel,
       sessionOptions,
       sessionConfig
     );
@@ -124,6 +132,7 @@ export class F5TTS {
     });
 
     LOG.debug("Models loaded successfully");
+    this.emit("initialize", { value: 100, message: "TTS model loaded successfully" });
   }
 
   tokenizeText(text) {
@@ -137,15 +146,15 @@ export class F5TTS {
    * @param {Tensor} refAudio - The reference audio data.
    * @param {string} refText - The reference text for the audio.
    * @param {string} genText - The text to generate audio for.
-   * @param {Function} onProgress - Callback for progress updates.
    * @param {number} speed - The speed of the generated speech.
    * @param {number} nfeSteps - The number of NFE steps for generation.
    * @returns {Promise<Float32Array>} - The generated speech audio data.
    */
-  async inference({ refAudio, refText, genText, onProgress, speed, nfeSteps }) {
-    if (!this.sessionA || !this.sessionB || !this.sessionC) {
+  async inference({ refAudio, refText, genText, speed, nfeSteps }) {
+    if (Object.values(this.sessions).some((s) => !s)) {
       throw new Error("Models not loaded");
     }
+    const { encoder, transformer, decoder } = this.sessions;
 
     const refRMS = calculateRMS(refAudio);
     if (refRMS < this.targetRMS) {
@@ -175,21 +184,21 @@ export class F5TTS {
 
     // Stage A: Preprocess - exact input names from Python
     const preprocessInputs = {
-      [this.sessionA.inputNames[0]]: audioTensor.ort,
-      [this.sessionA.inputNames[1]]: textTensor.ort,
-      [this.sessionA.inputNames[2]]: durationTensor.ort,
+      [encoder.inputNames[0]]: audioTensor.ort,
+      [encoder.inputNames[1]]: textTensor.ort,
+      [encoder.inputNames[2]]: durationTensor.ort,
     };
 
-    const preprocessOutputs = await this.sessionA.run(preprocessInputs);
+    const preprocessOutputs = await encoder.run(preprocessInputs);
 
-    let noise = preprocessOutputs[this.sessionA.outputNames[0]];
-    let ropeCosQ = preprocessOutputs[this.sessionA.outputNames[1]];
-    let ropeSinQ = preprocessOutputs[this.sessionA.outputNames[2]];
-    let ropeCosK = preprocessOutputs[this.sessionA.outputNames[3]];
-    let ropeSinK = preprocessOutputs[this.sessionA.outputNames[4]];
-    let catMelText = preprocessOutputs[this.sessionA.outputNames[5]];
-    let catMelTextDrop = preprocessOutputs[this.sessionA.outputNames[6]];
-    const refSignalLen = preprocessOutputs[this.sessionA.outputNames[7]];
+    let noise = preprocessOutputs[encoder.outputNames[0]];
+    let ropeCosQ = preprocessOutputs[encoder.outputNames[1]];
+    let ropeSinQ = preprocessOutputs[encoder.outputNames[2]];
+    let ropeCosK = preprocessOutputs[encoder.outputNames[3]];
+    let ropeSinK = preprocessOutputs[encoder.outputNames[4]];
+    let catMelText = preprocessOutputs[encoder.outputNames[5]];
+    let catMelTextDrop = preprocessOutputs[encoder.outputNames[6]];
+    const refSignalLen = preprocessOutputs[encoder.outputNames[7]];
 
     // Stage B: Transformer NFE steps - exact Python loop
     let timeStep = new ort.Tensor("int32", new Int32Array([0]), [1]);
@@ -206,26 +215,24 @@ export class F5TTS {
 
     for (let step = 0; step < nfeSteps - 1; step++) {
       const transformerInputs = {
-        [this.sessionB.inputNames[0]]: noise,
-        [this.sessionB.inputNames[1]]: ropeCosQ,
-        [this.sessionB.inputNames[2]]: ropeSinQ,
-        [this.sessionB.inputNames[3]]: ropeCosK,
-        [this.sessionB.inputNames[4]]: ropeSinK,
-        [this.sessionB.inputNames[5]]: catMelText,
-        [this.sessionB.inputNames[6]]: catMelTextDrop,
-        [this.sessionB.inputNames[7]]: timeStep,
+        [transformer.inputNames[0]]: noise,
+        [transformer.inputNames[1]]: ropeCosQ,
+        [transformer.inputNames[2]]: ropeSinQ,
+        [transformer.inputNames[3]]: ropeCosK,
+        [transformer.inputNames[4]]: ropeSinK,
+        [transformer.inputNames[5]]: catMelText,
+        [transformer.inputNames[6]]: catMelTextDrop,
+        [transformer.inputNames[7]]: timeStep,
       };
 
-      const transformerOutputs = await this.sessionB.run(transformerInputs);
-      noise = transformerOutputs[this.sessionB.outputNames[0]];
-      timeStep = transformerOutputs[this.sessionB.outputNames[1]];
+      const transformerOutputs = await transformer.run(transformerInputs);
+      noise = transformerOutputs[transformer.outputNames[0]];
+      timeStep = transformerOutputs[transformer.outputNames[1]];
 
-      if (onProgress) {
-        onProgress({
-          value: ((step + 1) / nfeSteps) * 100,
-          message: `NFE Step ${step + 1}/${nfeSteps}`,
-        });
-      }
+      this.emit("inference", {
+        value: ((step + 1) / nfeSteps) * 100,
+        message: `NFE Step ${step + 1}/${nfeSteps}`,
+      });
     }
 
     // Stage C: Decode
@@ -234,12 +241,12 @@ export class F5TTS {
     }
 
     const decodeInputs = {
-      [this.sessionC.inputNames[0]]: noise,
-      [this.sessionC.inputNames[1]]: refSignalLen,
+      [decoder.inputNames[0]]: noise,
+      [decoder.inputNames[1]]: refSignalLen,
     };
 
-    const decodeOutputs = await this.sessionC.run(decodeInputs);
-    const generatedSignal = decodeOutputs[this.sessionC.outputNames[0]];
+    const decodeOutputs = await decoder.run(decodeInputs);
+    const generatedSignal = decodeOutputs[decoder.outputNames[0]];
 
     let normalizedTensor = new Tensor(generatedSignal).to("float32").div(32767.0).reshape(-1);
 
@@ -250,34 +257,13 @@ export class F5TTS {
 
     return normalizedTensor;
   }
-}
-
-export class F5TTSAdapter {
-  constructor({ emit = () => {}, ...config }) {
-    this.config = config;
-    this.emit = emit;
-    this.ttsEngine = null;
-  }
-
-  async initialize() {
-    this.emit("progress", { value: 0, message: "Loading TTS model..." });
-    this.ttsEngine = new F5TTS(this.config);
-    await this.ttsEngine.load();
-    this.emit("progress", { value: 100, message: "TTS model loaded successfully" });
-  }
-
-  async process(input = {}) {
-    if (!this.ttsEngine) throw new Error("F5TTS engine not initialized");
-
-    return await this.ttsEngine.inference({
-      ...input,
-      onProgress: ({ value, message }) => {
-        this.emit("progress", { value, message });
-      },
-    });
-  }
 
   async dispose() {
-    this.ttsEngine = null;
+    for (const [key, session] of Object.entries(this.sessions)) {
+      if (session?.dispose) {
+        await session.dispose();
+      }
+      this.sessions[key] = null;
+    }
   }
 }
