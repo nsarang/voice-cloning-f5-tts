@@ -42,6 +42,7 @@ export function serialize(data) {
   if (data === null || typeof data !== "object" || ArrayBuffer.isView(data)) {
     return data;
   }
+
   if (Array.isArray(data)) {
     return data.map(serialize);
   }
@@ -75,6 +76,24 @@ export function deserialize(data) {
   }
 
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, deserialize(value)]));
+}
+
+// Utility functions for Comlink integration
+export function isSerializable(data) {
+  try {
+    if (data === null || typeof data !== "object" || ArrayBuffer.isView(data)) {
+      return true;
+    }
+    if (Array.isArray(data)) {
+      return data.every(isSerializable);
+    }
+    if (isPlainObject(data)) {
+      return Object.values(data).every(isSerializable);
+    }
+    return getTypeName(data.constructor) !== null;
+  } catch {
+    return false;
+  }
 }
 
 registerType("Tensor", Tensor);

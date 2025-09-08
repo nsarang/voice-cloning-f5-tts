@@ -40,7 +40,7 @@ export const handleAudioReady = async (file) => {
 export const handleTranscription = async (audioTensor, getOrCreateModel, updateProgress) => {
   if (!audioTensor) throw new Error("No audio data provided for transcription");
 
-  const model = getOrCreateModel("transcriber", { id: "transcriptionModel" }).on(
+  const model = getOrCreateModel({ adapterType: "transcriber", id: "transcriptionModel" }).on(
     "progress",
     updateProgress
   );
@@ -57,9 +57,13 @@ export const handleTranscription = async (audioTensor, getOrCreateModel, updateP
 export async function batchInference({ segments, settings, onProgress, getOrCreateModel }) {
   LOG.debug("Starting batch inference");
   LOG.debug({ segments, settings, onProgress, getOrCreateModel });
-  const model = getOrCreateModel("f5tts", {
+  const model = getOrCreateModel({
+    adapterType: "f5tts",
     id: "ttsEngine",
-    rootPath: `${window.location.origin}`,
+    config: {
+      // repoName: "nsarang/F5-TTS-ONNX",
+      // rootPath: `${window.location.origin}`,
+    },
   }).on("progress", onProgress);
 
   LOG.debug("Initializing model...");

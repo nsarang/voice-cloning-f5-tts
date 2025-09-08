@@ -1,25 +1,54 @@
+import * as Comlink from "comlink";
 import React, { createContext, useContext, useEffect, useRef } from "react";
 
-import { MESSAGES } from "./adapters.js";
-import { deserialize, serialize } from "./serialization.js";
+import Logger from "../logging";
+import { deserialize, isSerializable, serialize } from "./serialization.js";
 
-const ModelContext = createContext(null);
+const LOG = Logger.get("ModelContext");
+
+Comlink.transferHandlers.set("custom", {
+  canHandle: (obj) => isSerializable(obj),
+  serialize: (obj) => [serialize(obj), []],
+  deserialize: (data) => deserialize(data),
+});
 
 class ModelInstance {
-  constructor(adapterType, config = {}) {
-    /**
-     * Creates a new instance of the model with the specified adapter type and configuration.
-     * @param {string} adapterType - The type of adapter to use for the model.
-     * @param {object} config - Configuration options for the model constructor.
-     */
-    this.adapterType = adapterType;
-    this.config = config;
-    this.worker = this._createWorker();
-    this.callbacks = {};
-    this.listeners = new Map();
-    this.ready = false;
-    this.id = 0;
-    this.readyPromise = null;
+  constructor(cls, config = {}) {
+    this._cls = cls;
+    this._config = config;
+    this._listeners = new Map();
+    this._adapter = null;
+    this._worker = null;
+    LOG.debug(`Created ModelInstance of type ${cls} with config`, config);
+
+    // Return a Proxy that intercepts all property access
+    return new Proxy(this, {
+      get(target, prop) {
+        if (prop === "on" || prop === "off" || prop === "dispose" || prop.startsWith("_")) {
+          return target[prop];
+        }
+
+        // Return a shadow function that calls the adapter method
+        return (...args) => target._callAdapter(prop, args);
+      },
+    });
+  }
+
+  async _callAdapter(method, args) {
+    // Lazy initialization of the worker
+    if (!this._adapter) {
+      this._worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+      const api = Comlink.wrap(this._worker);
+
+      // Create event proxy
+      const eventProxy = Comlink.proxy((eventType, eventData) => {
+        this._listeners.get(eventType)?.forEach((handler) => handler(eventData));
+      });
+
+      this._adapter = await api.createAdapter(this._cls, this._config, eventProxy);
+    }
+
+    return await this._adapter[method](...args);
   }
 
   /**
@@ -29,10 +58,10 @@ class ModelInstance {
    * @returns {ModelInstance} The current instance for chaining.
    */
   on(eventType, handler) {
-    if (!this.listeners.has(eventType)) {
-      this.listeners.set(eventType, new Set());
+    if (!this._listeners.has(eventType)) {
+      this._listeners.set(eventType, new Set());
     }
-    this.listeners.get(eventType).add(handler);
+    this._listeners.get(eventType).add(handler);
     return this;
   }
 
@@ -43,35 +72,17 @@ class ModelInstance {
    * @returns {ModelInstance} The current instance for chaining.
    */
   off(eventType, handler) {
-    this.listeners.get(eventType)?.delete(handler);
+    this._listeners.get(eventType)?.delete(handler);
     return this;
   }
 
-  /**
-   * Initializes the model by sending an initialization message to the worker.
-   */
-  async initialize() {
-    if (this.readyPromise) {
-      return this.readyPromise;
+  resetListeners(eventType) {
+    if (eventType) {
+      this._listeners.get(eventType)?.clear();
+    } else {
+      this._listeners.clear();
     }
-
-    this.readyPromise = new Promise((resolve) => {
-      this.readyResolve = resolve;
-    });
-
-    return this._send(MESSAGES.INITIALIZE, { adapterType: this.adapterType, config: this.config });
-  }
-
-  /**
-   * Processes input data using the model.
-   * @param {any} input - The input data to process.
-   * @returns {Promise<any>} A promise that resolves with the processed output.
-   */
-  async process(input) {
-    if (!this.ready) {
-      await this.readyPromise;
-    }
-    return this._send(MESSAGES.PROCESS, { input });
+    return this;
   }
 
   /**
@@ -79,73 +90,18 @@ class ModelInstance {
    * @returns {Promise<void>} A promise that resolves when the worker is terminated.
    */
   async dispose() {
-    if (this.worker) {
-      this.worker.postMessage({ type: MESSAGES.DISPOSE, id: -1 });
-      this.worker.terminate();
-      this.worker = null;
-      this.ready = false;
+    if (this._adapter && this._adapter.dispose) {
+      await this._adapter.dispose();
+    }
+    if (this._worker) {
+      this._worker.terminate();
+      this._worker = null;
+      this._adapter = null;
     }
   }
-
-  // --- Private Methods ---
-  /**
-   * Sends a message to the worker and returns a promise for the response.
-   * @param {string} type - The type of message to send.
-   * @param {object} data - The data to include in the message.
-   * @returns {Promise<any>} A promise that resolves with the worker's response.
-   */
-  _send(type, data) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.callbacks[id] = (response) => {
-        if (response.type === MESSAGES.ERROR) {
-          const error = new Error(response.error.message);
-          error.name = response.error.name;
-          error.stack = response.error.stack;
-          reject(error);
-        } else if (response.type === MESSAGES.RESULT) {
-          resolve(deserialize(response.result)); // Automatically deserialize the result
-        } else {
-          resolve(response);
-        }
-      };
-      this.worker.postMessage(serialize({ ...data, type, id })); // Automatically serialize the message
-    });
-  }
-
-  /**
-   * Creates a new Web Worker for the model.
-   * @returns {Worker} The created worker instance.
-   */
-  _createWorker() {
-    const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-
-    worker.onmessage = ({ data }) => {
-      // Generic event
-      if (data.type === MESSAGES.EVENT) {
-        const handlers = this.listeners.get(data.eventType);
-        if (handlers) {
-          handlers.forEach((handler) => handler(data.eventData));
-        }
-      }
-      // Worker readiness
-      if (data.type === MESSAGES.READY && !this.ready) {
-        this.ready = true;
-        if (this.readyResolve) {
-          this.readyResolve();
-          this.readyResolve = null;
-        }
-      }
-      // Handle request/response callbacks
-      if (data.id && this.callbacks[data.id]) {
-        this.callbacks[data.id](data);
-        delete this.callbacks[data.id];
-      }
-    };
-
-    return worker;
-  }
 }
+
+const ModelContext = createContext(null);
 
 export function ModelProvider({ children }) {
   /**
@@ -164,12 +120,12 @@ export function ModelProvider({ children }) {
   /**
    * Retrieves or creates a model instance.
    * @param {string} adapterType - The type of adapter to use for the model.
+   * @param {string} [id] - Unique identifier for the model instance.
    * @param {object} config - Configuration options for the model.
    * @returns {ModelInstance} The retrieved or newly created model instance.
    */
-  const getOrCreateModel = (adapterType, config = {}) => {
-    const key =
-      config.id || `${adapterType}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const getOrCreateModel = ({ adapterType, id, config = {} }) => {
+    const key = id || `${adapterType}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     if (!models.current.has(key)) {
       models.current.set(key, new ModelInstance(adapterType, config));
@@ -180,10 +136,10 @@ export function ModelProvider({ children }) {
 
   /**
    * Disposes of a specific model instance.
-   * @param {string|ModelInstance} modelOrKey - The model instance or its key to dispose of.
+   * @param {string|ModelInstance} modelOrId - The model instance or its unique identifier.
    */
-  const disposeModel = (modelOrKey) => {
-    const key = typeof modelOrKey === "string" ? modelOrKey : modelOrKey.config.id;
+  const disposeModel = (modelOrId) => {
+    const key = typeof modelOrId === "string" ? modelOrId : modelOrId.id;
     const model = models.current.get(key);
     if (model) {
       model.dispose();
