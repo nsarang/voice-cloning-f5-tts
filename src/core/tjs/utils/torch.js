@@ -77,6 +77,7 @@ export class Tensor {
   }
 
   ort;
+  register;
 
   /**
    * Create a new Tensor or copy an existing Tensor.
@@ -84,38 +85,17 @@ export class Tensor {
    */
   constructor(...args) {
     if (isONNXTensor(args[0])) {
-      this.ort = /** @type {ONNXTensor} */ (args[0]);
+      this.ort = args[0]; // Copy existing ONNXTensor
+      this.register = args[1] ?? true;
     } else {
-      // Create new tensor
-      this.ort = new ONNXTensor(
-        /** @type {DataType} */ (args[0]),
-        // @ts-expect-error ts(2769) Type 'number' is not assignable to type 'bigint'.
-        /** @type {Exclude<import('./maths.js').AnyTypedArray, Uint8ClampedArray>} */ (args[1]),
-        args[2]
-      );
+      const [dataType, dataArray, dims, register = true] = args;
+      this.ort = new ONNXTensor(dataType, dataArray, dims);
+      this.register = register;
     }
 
-    tensorRegistry.register(this, this.ort, this);
-
-    return new Proxy(this, {
-      get: (obj, key) => {
-        if (typeof key === "string") {
-          const index = Number(key);
-          if (Number.isInteger(index)) {
-            // key is an integer (i.e., index)
-            return obj._getitem(index);
-          }
-        }
-        // @ts-ignore
-        return obj[key];
-      },
-      set: (obj, key, value) => {
-        // TODO allow setting of data
-
-        // @ts-ignore
-        return (obj[key] = value);
-      },
-    });
+    if (this.register) {
+      tensorRegistry.register(this, this.ort, this);
+    }
   }
 
   dispose() {
@@ -124,6 +104,14 @@ export class Tensor {
       tensorRegistry.unregister(this);
       this.ort = undefined;
     }
+  }
+
+  unregister() {
+    if (this.register) {
+      tensorRegistry.unregister(this);
+      this.register = false;
+    }
+    return this;
   }
 
   __serialize__() {
@@ -154,6 +142,9 @@ export class Tensor {
     } else {
       yield* this.data;
     }
+  }
+  at(index) {
+    return this._getitem(index);
   }
 
   /**
@@ -921,9 +912,9 @@ export function to(tensor, dtype) {
     }
 
     // @ts-ignore
-    return new Tensor(dtype, DataTypeMap[dtype].from(tensor.data, map_fn), tensor.dims);
+    return new Tensor(dtype, DataTypeMap[dtype].from(tensor.data, map_fn), tensor.dims.slice());
   } else if (isONNXTensor(tensor)) {
-    return new Tensor(tensor).to(dtype).ort;
+    return new Tensor(tensor, false).to(dtype).unregister().ort;
   }
   throw new Error(`Unsupported tensor type: ${typeof tensor}`);
 }

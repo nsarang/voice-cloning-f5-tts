@@ -7,13 +7,18 @@ import * as ort from "onnxruntime-web";
 import Logger from "../logging";
 import { calculateRMS, normalizeToInt16 } from "./audio";
 import { createInferenceSession, deviceToExecutionProviders } from "./tjs/backends/onnx";
+import { isWebGpuFp16Supported } from "./tjs/utils/dtypes";
+import { getModelFile, getModelText } from "./tjs/utils/hub";
 import { Tensor } from "./tjs/utils/torch";
+import * as torch from "./tjs/utils/torch";
 
 const LOG = Logger.get("F5TTS");
 
 export class F5TTS {
-  constructor(rootPath = "") {
+  constructor({ repoName = "", rootPath = "", useFP16 = true }) {
+    this.repoName = repoName;
     this.rootPath = rootPath;
+    this.useFP16 = useFP16;
     this.sessionA = null;
     this.sessionB = null;
     this.sessionC = null;
@@ -21,17 +26,21 @@ export class F5TTS {
     this.hopLength = 256;
     this.targetSampleRate = 24000;
     this.targetRMS = 0.1;
+
+    this.modelPaths = {
+      preprocess: `${this.rootPath}onnx/encoder_fp32.onnx`,
+      transformer: `${this.rootPath}onnx/transformer_fp32.onnx`,
+      transformer_fp16: `${this.rootPath}onnx/transformer_fp16.onnx`,
+      decode: `${this.rootPath}onnx/decoder_fp32.onnx`,
+      vocab: `${this.rootPath}vocab.txt`,
+    };
   }
 
   async load() {
-    const modelPaths = {
-      preprocess: `${this.rootPath}/models/F5_Preprocess.onnx`,
-      transformer: `${this.rootPath}/models/F5_Transformer.onnx`,
-      decode: `${this.rootPath}/models/F5_Decode.onnx`,
-      vocab: `${this.rootPath}/models/Emilia_ZH_EN_pinyin/vocab.txt`,
-    };
-
     const providers = deviceToExecutionProviders("auto");
+    let transformerPath = this.useFP16
+      ? this.modelPaths.transformer_fp16
+      : this.modelPaths.transformer;
 
     // If WebGPU is detected, configure it for high performance
     const webgpuProviderIndex = providers.findIndex(
@@ -53,7 +62,12 @@ export class F5TTS {
             device: device,
             powerPreference: "high-performance",
           };
-          LOG.debug("WebGPU configured with high-performance adapter");
+
+          if (this.useFP16 && !(await isWebGpuFp16Supported())) {
+            LOG.warn("WebGPU fp16 is not supported on this device. Falling back to fp32 model");
+            this.useFP16 = false;
+            transformerPath = this.modelPaths.transformer;
+          }
         }
       } catch (e) {
         LOG.debug("High-performance GPU setup failed, using default WebGPU");
@@ -82,39 +96,34 @@ export class F5TTS {
     };
     const sessionConfig = {};
 
-    try {
-      // Load models
-      this.sessionA = await createInferenceSession(
-        modelPaths.preprocess,
-        sessionOptions,
-        sessionConfig
-      );
-      this.sessionB = await createInferenceSession(
-        modelPaths.transformer,
-        sessionOptions,
-        sessionConfig
-      );
-      this.sessionC = await createInferenceSession(
-        modelPaths.decode,
-        sessionOptions,
-        sessionConfig
-      );
+    // Load models
+    this.sessionA = await createInferenceSession(
+      await getModelFile(this.repoName, this.modelPaths.preprocess),
+      sessionOptions,
+      sessionConfig
+    );
+    this.sessionB = await createInferenceSession(
+      await getModelFile(this.repoName, transformerPath),
+      sessionOptions,
+      sessionConfig
+    );
+    this.sessionC = await createInferenceSession(
+      await getModelFile(this.repoName, this.modelPaths.decode),
+      sessionOptions,
+      sessionConfig
+    );
 
-      // Load vocabulary
-      const vocabResponse = await fetch(modelPaths.vocab);
-      const vocabText = await vocabResponse.text();
-      this.vocabMap = {};
+    // Load vocabulary
+    const vocabText = await getModelText(this.repoName, this.modelPaths.vocab);
+    this.vocabMap = {};
 
-      vocabText.split("\n").forEach((char, idx) => {
-        if (char.trim()) {
-          this.vocabMap[char.trim()] = idx;
-        }
-      });
+    vocabText.split("\n").forEach((char, idx) => {
+      if (char.trim()) {
+        this.vocabMap[char.trim()] = idx;
+      }
+    });
 
-      LOG.debug("Models loaded successfully");
-    } catch (error) {
-      throw new Error(`Failed to load models: ${error.message}`);
-    }
+    LOG.debug("Models loaded successfully");
   }
 
   tokenizeText(text) {
@@ -155,6 +164,14 @@ export class F5TTS {
     const duration =
       refAudioLen + Math.trunc(((refAudioLen / (refText.length + 1)) * genText.length) / speed);
     const durationTensor = new Tensor("int64", new BigInt64Array([BigInt(duration)]), [1]);
+    LOG.debug(
+      "Ref audio length (frames):",
+      refAudioLen,
+      "Duration (frames):",
+      duration,
+      "Speed:",
+      speed
+    );
 
     // Stage A: Preprocess - exact input names from Python
     const preprocessInputs = {
@@ -166,25 +183,26 @@ export class F5TTS {
     const preprocessOutputs = await this.sessionA.run(preprocessInputs);
 
     let noise = preprocessOutputs[this.sessionA.outputNames[0]];
-    const ropeCosQ = preprocessOutputs[this.sessionA.outputNames[1]];
-    const ropeSinQ = preprocessOutputs[this.sessionA.outputNames[2]];
-    const ropeCosK = preprocessOutputs[this.sessionA.outputNames[3]];
-    const ropeSinK = preprocessOutputs[this.sessionA.outputNames[4]];
-    const catMelText = preprocessOutputs[this.sessionA.outputNames[5]];
-    const catMelTextDrop = preprocessOutputs[this.sessionA.outputNames[6]];
+    let ropeCosQ = preprocessOutputs[this.sessionA.outputNames[1]];
+    let ropeSinQ = preprocessOutputs[this.sessionA.outputNames[2]];
+    let ropeCosK = preprocessOutputs[this.sessionA.outputNames[3]];
+    let ropeSinK = preprocessOutputs[this.sessionA.outputNames[4]];
+    let catMelText = preprocessOutputs[this.sessionA.outputNames[5]];
+    let catMelTextDrop = preprocessOutputs[this.sessionA.outputNames[6]];
     const refSignalLen = preprocessOutputs[this.sessionA.outputNames[7]];
 
     // Stage B: Transformer NFE steps - exact Python loop
     let timeStep = new ort.Tensor("int32", new Int32Array([0]), [1]);
 
-    // to Float16
-    // noise = torch.to(noise, "float16");
-    // ropeCosQ = torch.to(ropeCosQ, "float16");
-    // ropeSinQ = torch.to(ropeSinQ, "float16");
-    // ropeCosK = torch.to(ropeCosK, "float16");
-    // ropeSinK = torch.to(ropeSinK, "float16");
-    // catMelText = torch.to(catMelText, "float16");
-    // catMelTextDrop = torch.to(catMelTextDrop, "float16");
+    if (this.useFP16) {
+      noise = torch.to(noise, "float16");
+      ropeCosQ = torch.to(ropeCosQ, "float16");
+      ropeSinQ = torch.to(ropeSinQ, "float16");
+      ropeCosK = torch.to(ropeCosK, "float16");
+      ropeSinK = torch.to(ropeSinK, "float16");
+      catMelText = torch.to(catMelText, "float16");
+      catMelTextDrop = torch.to(catMelTextDrop, "float16");
+    }
 
     for (let step = 0; step < nfeSteps - 1; step++) {
       const transformerInputs = {
@@ -211,6 +229,10 @@ export class F5TTS {
     }
 
     // Stage C: Decode
+    if (this.useFP16) {
+      noise = torch.to(noise, "float32");
+    }
+
     const decodeInputs = {
       [this.sessionC.inputNames[0]]: noise,
       [this.sessionC.inputNames[1]]: refSignalLen,
@@ -227,5 +249,35 @@ export class F5TTS {
     }
 
     return normalizedTensor;
+  }
+}
+
+export class F5TTSAdapter {
+  constructor({ emit = () => {}, ...config }) {
+    this.config = config;
+    this.emit = emit;
+    this.ttsEngine = null;
+  }
+
+  async initialize() {
+    this.emit("progress", { value: 0, message: "Loading TTS model..." });
+    this.ttsEngine = new F5TTS(this.config);
+    await this.ttsEngine.load();
+    this.emit("progress", { value: 100, message: "TTS model loaded successfully" });
+  }
+
+  async process(input = {}) {
+    if (!this.ttsEngine) throw new Error("F5TTS engine not initialized");
+
+    return await this.ttsEngine.inference({
+      ...input,
+      onProgress: ({ value, message }) => {
+        this.emit("progress", { value, message });
+      },
+    });
+  }
+
+  async dispose() {
+    this.ttsEngine = null;
   }
 }

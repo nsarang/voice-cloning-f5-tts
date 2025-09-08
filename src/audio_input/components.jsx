@@ -358,9 +358,7 @@ export const RecordingPreview = ({ blob, onRerecord, onAccept }) => {
 
   // TODO: revokation?
   // useEffect(() => {
-  //   console.log("RecordingPreview mounted with URL:", audioUrl);
   //   return () => {
-  //     console.log("RecordingPreview unmounted, revoking URL:", audioUrl);
   //     revokeBlobUrl(audioUrl);
   //   };
   // }, [audioUrl, revokeBlobUrl]);

@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { ModelProvider } from "./engine/ModelContext";
 import { CreditsTab, PodcastTab, TTSTab } from "./tabs";
-import TabsLayout from "./tabs/TabsLayout";
+import { TabNavigation } from "./tabs/utils/TabNavigation";
 
 const App = () => {
   const [activeTab, setActiveTab] = useState("tts");
@@ -31,6 +31,23 @@ const App = () => {
         </div>
       </div>
     </ModelProvider>
+  );
+};
+
+const TabsLayout = ({ tabs, activeTab, setActiveTab }) => {
+  return (
+    <div className="max-w-6xl mx-auto space-y-8">
+      <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
+        {/* Render all tabs but only show the active one */}
+        {tabs.map((tab) => (
+          <div key={tab.id} style={{ display: activeTab === tab.id ? "block" : "none" }}>
+            <tab.component />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
 

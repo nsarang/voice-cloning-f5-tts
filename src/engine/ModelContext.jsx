@@ -50,16 +50,16 @@ class ModelInstance {
   /**
    * Initializes the model by sending an initialization message to the worker.
    */
-  initialize() {
+  async initialize() {
     if (this.readyPromise) {
-      return; // If readyPromise is already set, init has been called
+      return this.readyPromise;
     }
 
     this.readyPromise = new Promise((resolve) => {
       this.readyResolve = resolve;
     });
 
-    this._send(MESSAGES.INITIALIZE, { adapterType: this.adapterType, config: this.config });
+    return this._send(MESSAGES.INITIALIZE, { adapterType: this.adapterType, config: this.config });
   }
 
   /**

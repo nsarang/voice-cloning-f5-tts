@@ -52,19 +52,21 @@ export const PodcastTab = () => {
 
   const onLoadDemo = useCallback(() => {
     audioInputState1.loadFromUrl(
-      "https://static.wikia.nocookie.net/dota2_gamepedia/images/e/e0/Vo_sniper_snip_spawn_05.mp3"
+      "https://static.wikia.nocookie.net/dota2_gamepedia/images/c/c6/Vo_dark_willow_sylph_hero_intro_04.mp3"
     );
     audioInputState2.loadFromUrl(
-      "https://static.wikia.nocookie.net/dota2_gamepedia/images/e/e0/Vo_sniper_snip_spawn_05.mp3"
+      "https://static.wikia.nocookie.net/dota2_gamepedia/images/c/c0/Vo_sniper_snip_kill_blade_03.mp3"
     );
     setSpeakers({
       speaker1: {
         name: "Alice",
-        refText: "Hello, I'm Alice. I love discussing technology and innovation.",
+        refText: "",
+        // refText: "Hello, I'm Alice. I love discussing technology and innovation.",
       },
       speaker2: {
         name: "Bob",
-        refText: "Hi, I'm Bob. I'm passionate about AI and its impact on society.",
+        refText: "",
+        // refText: "Hi, I'm Bob. I'm passionate about AI and its impact on society.",
       },
     });
     setScript(
@@ -119,7 +121,7 @@ Alice: Absolutely! Let's dive into some recent breakthroughs.`
         getOrCreateModel,
       });
 
-      const silence = emptySegment({ durationMs: 500, sampleRate: 24000 });
+      const silence = emptySegment({ durationMs: 300, sampleRate: 24000 });
       const interleavedResult = result.flatMap((item, index) =>
         index < result.length - 1 ? [item, silence] : [item]
       );

@@ -6,6 +6,11 @@ import { SectionHeader } from "./utils/SectionHeader";
 export const CreditsTab = () => {
   const contributors = [
     {
+      name: "xenova/whisper-web",
+      role: "I learned a lot from the Whisper Web implementation for creating my template. Xenova's work in the WebML space has been second to none, and he's the author of Transformers.js.",
+      link: "https://github.com/xenova/whisper-web",
+    },
+    {
       name: "SWivid/F5-TTS",
       role: "Original F5-TTS model and research. The architecture is a transformer model with conditional flow matching objective.",
       link: "https://github.com/SWivid/F5-TTS",
@@ -19,11 +24,6 @@ export const CreditsTab = () => {
       name: "DakeQQ/F5-TTS-ONNX",
       role: "ONNX conversion and optimization for web deployment. This kind of conversion is not trivial and requires source code modifications.",
       link: "https://github.com/DakeQQ/F5-TTS-ONNX",
-    },
-    {
-      name: "xenova/whisper-web",
-      role: "I learned a lot from the Whisper Web implementation for creating my template. Xenova's work in the WebML space has been second to none.",
-      link: "https://github.com/xenova/whisper-web",
     },
     {
       name: "onnx-community/distil-small.en",
@@ -110,6 +110,8 @@ const ModelInfoSection = () => (
 const TechnicalStack = () => {
   const technologies = [
     { name: "ONNX Runtime", version: "Web", purpose: "Model Inference" },
+    { name: "Comlink", version: "4.x", purpose: "Web Worker Communication" },
+    { name: "Transformers.js", version: "3.7", purpose: "Transcription and Utility Functions" },
     { name: "React", version: "19.x", purpose: "UI Framework" },
     { name: "Tailwind CSS", version: "3.x", purpose: "Styling" },
   ];

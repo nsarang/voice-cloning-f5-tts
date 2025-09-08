@@ -556,16 +556,22 @@ export async function getModelFile(
           return null;
         }
       }
-      if (!validModelId) {
-        // Before making any requests to the remote server, we check if the model ID is valid.
-        // This prevents unnecessary network requests for invalid model IDs.
-        throw Error(
-          `Local file missing at "${localPath}" and download aborted due to invalid model ID "${path_or_repo_id}".`
-        );
-      }
+      // NOTE: changing the logic here to allow local server access
+      // if (!validModelId) {
+      //   // Before making any requests to the remote server, we check if the model ID is valid.
+      //   // This prevents unnecessary network requests for invalid model IDs.
+      //   throw Error(
+      //     `Local file missing at "${localPath}" and download aborted due to invalid model ID "${path_or_repo_id}".`
+      //   );
+      // }
 
-      // File not found locally, so we try to download it from the remote server
-      response = await getFile(remoteURL);
+      // // File not found locally, so we try to download it from the remote server
+      // response = await getFile(remoteURL);
+      if (!validModelId) {
+        response = await getFile(localPath);
+      } else {
+        response = await getFile(remoteURL);
+      }
 
       if (response.status !== 200) {
         return handleError(response.status, remoteURL, fatal);
