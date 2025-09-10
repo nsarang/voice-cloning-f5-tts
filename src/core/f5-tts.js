@@ -99,7 +99,10 @@ export class F5TTS {
     const sessionConfig = {};
 
     // Load models
-    const progressCallback = defaultDownloadProgressCallback(this.emit);
+    const progressCallback = defaultDownloadProgressCallback({
+      emit: this.emit,
+      messagePrefix: "TTS: Downloading model files",
+    });
     const [encoderModel, transformerModel, decoderModel] = await Promise.all(
       [this.modelPaths.preprocess, transformerPath, this.modelPaths.decode].map((path) =>
         getModelFile(this.repoName, path, true, { progress_callback: progressCallback })
@@ -231,7 +234,7 @@ export class F5TTS {
 
       this.emit("inference", {
         value: ((step + 1) / nfeSteps) * 100,
-        message: `NFE Step ${step + 1}/${nfeSteps}`,
+        message: `Generating: NFE Step ${step + 1}/${nfeSteps}`,
       });
     }
 

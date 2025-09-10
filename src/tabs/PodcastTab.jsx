@@ -9,10 +9,14 @@ import * as torch from "../core/tjs/utils/torch";
 import { useModel } from "../engine/ModelContext";
 import Logger from "../logging";
 import { Button, ProgressBar, TextInput, useObjectURLManager, useProgress } from "../shared";
-import { AdvancedSettings, useAdvancedSettings } from "./utils/AdvancedSettings";
+import {
+  AdvancedSettings,
+  DescriptionBox,
+  DeviceInfoCard,
+  SectionHeader,
+  useAdvancedSettings,
+} from "./utils";
 import { DEFAULT_SETTINGS } from "./utils/defaults";
-import { DescriptionBox } from "./utils/DescriptionBox";
-import { SectionHeader } from "./utils/SectionHeader";
 
 const LOG = Logger.get("PodcastTab");
 
@@ -230,6 +234,8 @@ Alice: Absolutely! Let's dive into some recent breakthroughs.`
         showAdvanced={showAdvanced}
         onToggleAdvanced={onToggleAdvanced}
       />
+
+      <DeviceInfoCard />
 
       <Button
         buttonText="Generate Podcast"

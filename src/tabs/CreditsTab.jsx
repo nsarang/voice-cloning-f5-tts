@@ -7,7 +7,7 @@ export const CreditsTab = () => {
   const contributors = [
     {
       name: "xenova/whisper-web",
-      role: "I learned a lot from the Whisper Web implementation for creating my template. Xenova's work in the WebML space has been second to none, and he's the author of Transformers.js.",
+      role: "I learned a lot from the Whisper Web implementation and Transformers.js to create my template. Xenova's work in the WebML space has been second to none.",
       link: "https://github.com/xenova/whisper-web",
     },
     {
@@ -29,6 +29,10 @@ export const CreditsTab = () => {
       name: "onnx-community/distil-small.en",
       role: "ONNX version of the Distil Whisper transcription model.",
       link: "https://huggingface.co/onnx-community/distil-small.en",
+    },
+    {
+      name: "Claude and Copilot",
+      role: "For an inexperienced web developer like me, these tools were very helpful... most of the time! :))",
     },
   ];
 

@@ -7,7 +7,7 @@ import { defaultDownloadProgressCallback } from "./utils";
 const LOG = Logger.get("Transcriber");
 
 export class Transcriber {
-  constructor({ dtype = "fp32", emit = LOG.trace }) {
+  constructor({ dtype = "q8", emit = LOG.trace }) {
     this.dtype = dtype;
     this.emit = emit;
     this.instance = null;
@@ -18,7 +18,10 @@ export class Transcriber {
       return;
     }
     this.emit("initialize", { value: 0, message: "Loading transcription model..." });
-    const progressCallback = defaultDownloadProgressCallback(this.emit);
+    const progressCallback = defaultDownloadProgressCallback({
+      emit: this.emit,
+      messagePrefix: "Transcriber: Downloading model files",
+    });
 
     this.instance = await pipeline(
       "automatic-speech-recognition",
@@ -51,7 +54,7 @@ export class Transcriber {
       stride_length_s: stride_length_s,
       sampling_rate: sampleRate,
     });
-    this.emit("inference", { value: 100, message: "Transcription complete" });
+    this.emit("inference", { value: 100, message: "Transcription complete!" });
     return result.text;
   }
 

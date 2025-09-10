@@ -132,7 +132,10 @@ export function downloadProgressTracker(onProgress) {
   };
 }
 
-export function defaultDownloadProgressCallback(emit, messagePrefix = "Downloading model files") {
+export function defaultDownloadProgressCallback({
+  emit,
+  messagePrefix = "Downloading model files",
+}) {
   return downloadProgressTracker(({ numberOfFiles, currentMB, totalMB }) => {
     emit("download", {
       value: totalMB ? (currentMB / totalMB) * 100 : 0,

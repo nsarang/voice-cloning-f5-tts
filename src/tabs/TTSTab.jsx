@@ -7,10 +7,14 @@ import { RawAudio } from "../core/tjs/utils/audio";
 import { useModel } from "../engine/ModelContext";
 import Logger from "../logging";
 import { Button, ProgressBar, TextInput, useObjectURLManager, useProgress } from "../shared";
-import { AdvancedSettings, useAdvancedSettings } from "./utils/AdvancedSettings";
+import {
+  AdvancedSettings,
+  DescriptionBox,
+  DeviceInfoCard,
+  SectionHeader,
+  useAdvancedSettings,
+} from "./utils";
 import { DEFAULT_SETTINGS } from "./utils/defaults";
-import { DescriptionBox } from "./utils/DescriptionBox";
-import { SectionHeader } from "./utils/SectionHeader";
 
 const LOG = Logger.get("TTSTab");
 
@@ -36,7 +40,7 @@ export const TTSTab = () => {
   const { settings, updateSettings } = useAdvancedSettings(DEFAULT_SETTINGS);
   const { createBlobUrl, revokeBlobUrl } = useObjectURLManager();
 
-  const onLoadDemo = useCallback(() => {
+  const onLoadDemo = useCallback(async () => {
     audioInputState.loadFromUrl(
       "https://static.wikia.nocookie.net/dota2_gamepedia/images/e/e0/Vo_sniper_snip_spawn_05.mp3"
     );
@@ -158,6 +162,8 @@ Granted, the journey is fraught with challenges, but the young wizard is determi
         showAdvanced={showAdvanced}
         onToggleAdvanced={onToggleAdvanced}
       />
+
+      <DeviceInfoCard />
 
       <Button onClick={onGenerate} disabled={isGenerateDisabled} loading={isGenerating} />
 

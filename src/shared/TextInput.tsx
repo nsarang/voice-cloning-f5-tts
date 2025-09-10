@@ -24,7 +24,7 @@ export const TextInput = ({
   description,
   disabled,
   multiline = false,
-  rows = 4,
+  rows = 6,
 }: TextInputProps) => {
   const [focused, setFocused] = useState(false);
   const inputId = label ? label.toLowerCase().replace(/\s+/g, "-") : "text-input";

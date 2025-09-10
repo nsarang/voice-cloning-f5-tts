@@ -68,7 +68,7 @@ export async function batchInference({ segments, settings, onProgress, getOrCrea
     adapterType: "f5tts",
     id: "ttsEngine",
     config: {
-      // repoName: "nsarang/F5-TTS-ONNX",
+      repoName: "nsarang/F5-TTS-ONNX",
       // rootPath: `${window.location.origin}`,
     },
   }).resetListeners();
