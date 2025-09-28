@@ -44,9 +44,10 @@ export const TTSTab = () => {
     audioInputState.loadFromUrl(
       "https://static.wikia.nocookie.net/dota2_gamepedia/images/e/e0/Vo_sniper_snip_spawn_05.mp3"
     );
-    setGenText(`This is a sample text from my favorite book. It has several sentences, and I want to see how it gets split into batches based on the defined rules.
-The book is about a young wizard's journey to master his craft and confront the dark forces that threaten his world.
-Granted, the journey is fraught with challenges, but the young wizard is determined to succeed.`);
+    setGenText(`In the heart of the bustling city, a curious inventor worked tirelessly on his latest creation—a machine that could turn thoughts into reality. 
+Each component was meticulously crafted, every wire connected with precision. 
+As the sun dipped below the horizon, casting a golden glow over the skyline, he whispered to himself, "This is the beginning of something extraordinary."
+The machine hummed to life, its gears spinning and lights flickering, ready to unveil the wonders of imagination.`);
   }, [audioInputState, setGenText]);
 
   const onAudioReady = useCallback(async (file) => setRefAudio(await handleAudioReady(file)), []);

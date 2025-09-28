@@ -1,31 +1,34 @@
-export const createWebGPUDevice = (function () {
-  let cachedResult;
+export const createWebGPUDevice = (() => {
+  const cache = new Map();
 
-  return async function (adapterDesc) {
-    if (cachedResult !== undefined) {
-      return cachedResult;
+  return (adapterDesc) => {
+    const key = JSON.stringify(adapterDesc || {});
+    if (!cache.has(key)) {
+      cache.set(
+        key,
+        (async () => {
+          const result = {};
+          try {
+            const adapter = await navigator.gpu.requestAdapter(adapterDesc);
+            if (adapter) {
+              result.adapter = adapter;
+              result.info = {
+                fp16_support: adapter.features.has("shader-f16"),
+                vendor: adapter.info.vendor,
+                architecture: adapter.info.architecture,
+              };
+              const device = await adapter.requestDevice();
+              result.device = device;
+              result.info.maxBufferSize = device.limits.maxBufferSize;
+            }
+          } catch (e) {
+            result.error = (e.message || e).toString();
+          }
+          return result;
+        })()
+      );
     }
-    cachedResult = {};
-    try {
-      const adapter = await navigator.gpu.requestAdapter(adapterDesc);
-      if (adapter) {
-        cachedResult.adapter = adapter;
-        cachedResult.info = {
-          fp16_support: adapter.features.has("shader-f16"),
-          vendor: adapter.info.vendor,
-          architecture: adapter.info.architecture,
-        };
-
-        const device = await adapter.requestDevice();
-        if (device) {
-          cachedResult.device = device;
-          cachedResult.info.maxBufferSize = adapter.limits.maxBufferSize;
-        }
-      }
-    } catch (e) {
-      cachedResult.error = (e.message || e).toString();
-    }
-    return cachedResult;
+    return cache.get(key);
   };
 })();
 

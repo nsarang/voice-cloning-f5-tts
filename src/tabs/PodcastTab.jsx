@@ -61,6 +61,7 @@ export const PodcastTab = () => {
     audioInputState2.loadFromUrl(
       "https://static.wikia.nocookie.net/dota2_gamepedia/images/c/c0/Vo_sniper_snip_kill_blade_03.mp3"
     );
+
     setSpeakers({
       speaker1: {
         name: "Alice",
