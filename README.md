@@ -1,182 +1,94 @@
-# F5-TTS Web
+# Voice Cloning w/ F5-TTS
 
-A web-based implementation of F5-TTS using ONNX Runtime with WebGPU acceleration for fast, browser-native text-to-speech synthesis.
+Source code for the following project: [Voice Cloning in Browser with F5-TTS](https://nimasarang.com/project/2025-09-28-tts/)
+
+A fully browser-based text-to-speech system with voice cloning capabilities. This implementation brings the F5-TTS model (Flow Matching with Diffusion Transformer) to the web using ONNX Runtime. Think of it as real-time neural voice synthesis without server dependencies.
 
 ## Features
 
-- **ONNX-optimized F5-TTS inference** with WebGPU acceleration
-- **Modular React architecture** with proper component separation
-- **Real-time audio processing** with silence detection and RMS normalization
-- **Batch text processing** for long-form generation
-- **WebGPU/CPU fallback** for maximum compatibility
-- **Zero backend required** - runs entirely in the browser
+- Voice Cloning: Generate speech in any voice using a 5-10 second reference audio sample
+- Multi-Speaker Podcasts: Create conversations between different cloned voices
+- Automatic Transcription: Built-in Distil Whisper model for reference audio transcription
+- Zero-Latency After Load: All processing happens locally in the browser using WebGPU/WASM
 
-## Project Structure
+## Technical Stack
+
+**Models:**
+
+- F5-TTS transformer (ONNX-optimized, ~200MB FP16)
+- Distil Whisper small.en (transcription)
+
+**Inference Engine:**
+
+- ONNX Runtime Web with WebGPU/WASM backends
+- FP16 support for GPU acceleration
+- Custom tensor and audio processing pipelines
+
+**Core Dependencies:**
+
+- Transformers.js 3.7 (transcription pipeline)
+- Comlink 4.x (Web Worker communication)
+- React 19.x + Tailwind CSS (UI)
+
+## Architecture
 
 ```
-f5-tts-web/
-├── package.json
-├── vite.config.js
-├── index.html
-├── src/
-│   ├── main.jsx           # Entry point
-│   ├── App.jsx            # Main React component
-│   ├── index.css          # Tailwind CSS
-│   ├── f5-tts.js          # ONNX inference engine
-│   └── audio-utils.js     # Audio processing utilities
-└── public/
-    └── models/            # ONNX model files (you provide)
-        ├── F5_Preprocess.onnx
-        ├── F5_Transformer.onnx
-        ├── F5_Decode.onnx
-        └── vocab.txt
+src/
+├── core/                   # ML implementation layer
+│   ├── f5-tts.js           # F5-TTS ONNX inference with 3-stage pipeline
+│   ├── transcriber.js      # Whisper-based transcription
+│   ├── audio.js            # Audio processing (RMS normalization, silence detection)
+│   ├── inference.js        # High-level inference orchestration & batching
+│   ├── device.js           # WebGPU device detection & capability checking
+│   ├── utils.js            # Text chunking, progress tracking
+│   └── tjs/                # Tensor library adopted from Transformers.js
+│       ├── backends/       # ONNX Runtime integration & device mapping
+│       ├── ops/            # Custom operations not in ORT
+│       └── utils/
+│           ├── torch.js    # Tensor class with autograd-style API
+│           ├── audio.js    # Mel spectrogram, STFT, audio I/O
+│           ├── maths.js    # FFT, interpolation, statistical ops
+│           ├── hub.js      # HuggingFace Hub file loading & caching
+│           └── devices.js  # Device type definitions & FP16 detection
+│
+├── engine/                 # Model execution infrastructure
+│   ├── ModelContext.jsx    # React context for model lifecycle management
+│   ├── worker.js           # Web Worker entry point for model execution
+│   ├── adapters.js         # Adapter registry (f5tts, transcriber)
+│   └── serialization.js    # Custom Tensor serialization for Comlink
+│
+├── tabs/                   # Feature-specific UI components
+│   ├── TTSTab.jsx          # Single-voice TTS generation
+│   ├── PodcastTab.jsx      # Multi-speaker dialogue generation
+│   ├── CreditsTab.jsx      # Attribution & technical info
+│   └── utils/              # Shared tab components
+│       ├── AdvancedSettings.tsx  # Speed, NFE steps, chunking controls
+│       ├── DeviceInfoCard.jsx    # WebGPU/WASM capability display
+│       └── defaults.js           # Default TTS parameters
+│
+├── audio_input/            # Unified audio input handling
+│   ├── components.jsx      # File upload, URL, microphone recording UI
+│   └── hook.js             # useAudioInput state management hook
+│
+├── audio_player/           # Audio playback with waveform
+│   └── AudioPlayer.jsx     # WaveSurfer.js integration
+│
+└── shared/                 # Reusable UI components
+    ├── Button.tsx          # Animated generate button
+    ├── TextInput.tsx       # Styled text/textarea input
+    ├── ProgressBar.jsx     # Download/inference progress display
+    └── useURLManager.js    # Blob URL lifecycle management
 ```
 
-## Setup
+**Key Design Patterns:**
 
-### 1. Install Dependencies
+- Worker-based Execution: All model inference runs in dedicated Web Workers to prevent UI blocking
+- Adapter Pattern: Unified interface for F5TTS and Transcriber models with event-driven progress reporting
+- Lazy Initialization: Models are loaded on-demand and cached for subsequent use
+- Tensor Serialization: Custom serialization handlers enable efficient transfer of Tensor objects between main thread and workers using Comlink
 
-```bash
-npm install
-```
+The F5-TTS inference follows a 3-stage pipeline:
 
-### 2. Add ONNX Models
-
-You need to convert the F5-TTS PyTorch models to ONNX format and place them in `public/models/`:
-
-- `F5_Preprocess.onnx` - Audio preprocessing model (CPU-optimized)
-- `F5_Transformer.onnx` - Main transformer model (WebGPU-accelerated)
-- `F5_Decode.onnx` - Audio generation model with integrated Vocos (CPU-optimized)
-- `vocab.txt` - Character vocabulary file
-
-### 3. Run Development Server
-
-```bash
-npm run dev
-```
-
-Open http://localhost:5173 in your browser.
-
-### 4. Build for Production
-
-```bash
-npm run build
-npm run preview
-```
-
-## Usage
-
-1. **Load Models**: Click "Load Models" to initialize the ONNX runtime
-2. **Upload Reference Audio**: Provide a clean audio sample (< 15 seconds)
-3. **Enter Reference Text**: Type what the reference audio says
-4. **Enter Generation Text**: Type what you want to synthesize
-5. **Generate**: Click "Generate Speech" and wait for processing
-
-## Technical Details
-
-### Audio Processing Pipeline
-
-1. **Load & Convert**: Decode uploaded audio to AudioBuffer
-2. **Mono Conversion**: Average multi-channel audio to mono
-3. **Duration Limiting**: Clip to 15 seconds maximum
-4. **Silence Removal**: Remove quiet segments while preserving speech
-5. **RMS Normalization**: Adjust volume to target level (0.1)
-6. **Resampling**: Convert to 24kHz using linear interpolation
-
-### ONNX Inference Pipeline
-
-1. **Stage A (Preprocess)**: Convert audio/text to model inputs
-2. **Stage B (Transformer)**: Run NFE diffusion steps (32 iterations)
-3. **Stage C (Decode)**: Generate final audio with integrated Vocos
-
-### Performance Optimizations
-
-- **WebGPU acceleration** for transformer model
-- **CPU processing** for lighter preprocessing/decode models
-- **Batch processing** for long text inputs
-- **Memory-efficient** tensor operations
-- **Progressive loading** with real-time progress feedback
-
-## Browser Compatibility
-
-### Supported Browsers
-- **Chrome/Edge 113+** (WebGPU supported)
-- **Firefox 110+** (CPU fallback)
-- **Safari 16+** (CPU fallback)
-
-### Requirements
-- Modern browser with ES6 modules support
-- AudioContext API support
-- ONNX Runtime Web compatibility
-
-## Performance Expectations
-
-### With WebGPU (Recommended)
-- **Model Loading**: 5-10 seconds
-- **Audio Processing**: 1-2 seconds
-- **Generation**: 3-5 seconds per batch
-
-### CPU Fallback
-- **Model Loading**: 10-15 seconds  
-- **Audio Processing**: 2-3 seconds
-- **Generation**: 15-30 seconds per batch
-
-## Troubleshooting
-
-### Model Loading Issues
-- Ensure ONNX files are in `public/models/` directory
-- Check browser console for detailed error messages
-- Verify model files are not corrupted
-- Try refreshing the page
-
-### WebGPU Issues
-- Check if WebGPU is enabled in browser flags
-- Update to latest browser version
-- App will automatically fall back to CPU
-
-### Audio Quality Issues
-- Use high-quality reference audio (clear speech, no background noise)
-- Keep reference audio under 15 seconds
-- Ensure reference text exactly matches the audio
-- Try different reference audio if quality is poor
-
-### Memory Issues
-- Close other browser tabs
-- Use shorter text inputs
-- Refresh page if app becomes unresponsive
-
-## Development
-
-### Adding New Features
-
-The modular architecture makes it easy to extend:
-
-- **Audio processing**: Modify `src/audio-utils.js`
-- **Model inference**: Update `src/f5-tts.js`
-- **UI components**: Edit `src/App.jsx`
-
-### Testing Audio Processing
-
-Each utility function can be tested independently:
-
-```javascript
-import { calculateRMS, resample } from './src/audio-utils.js';
-
-// Test RMS calculation
-const rms = calculateRMS(audioBuffer);
-console.log('RMS:', rms);
-
-// Test resampling
-const resampled = resample(audioBuffer, 24000);
-console.log('Resampled rate:', resampled.sampleRate);
-```
-
-## License
-
-This project is based on the original F5-TTS implementation. Refer to the original repository for licensing details.
-
-## Credits
-
-- [F5-TTS](https://github.com/SWivid/F5-TTS) - Original implementation
-- [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript.html) - Browser inference
-- [Vocos](https://github.com/charactr-platform/vocos) - Neural vocoder
+- Encoder: Processes reference audio + text into latent representations with RoPE embeddings
+- Transformer: Iterative denoising using Neural Flow Matching (NFE steps)
+- Decoder: Converts latent mel-spectrogram to waveform
