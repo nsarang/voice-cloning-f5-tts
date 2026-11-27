@@ -15,6 +15,39 @@ import { defaultDownloadProgressCallback } from "./utils";
 
 const LOG = Logger.get("F5TTS");
 
+// ONNX Runtime Web has no int16 `Cast` (on WebGPU or WASM), so the encoder's
+// int16 `audio` input and the decoder's int16 `output_audio` fail to load.
+// These patch the model bytes in place to float32, which carries the same
+// values: one byte each, in the input/output type and in the decoder's Cast.
+const INT16 = 5;
+const FLOAT = 1;
+
+function findOnly(bytes, pattern, what) {
+  const matches = [];
+  outer: for (let i = 0; i <= bytes.length - pattern.length; i++) {
+    for (let j = 0; j < pattern.length; j++) {
+      if (pattern[j] !== null && bytes[i + j] !== pattern[j]) continue outer;
+    }
+    matches.push(i);
+    if (matches.length > 1) break;
+  }
+  if (matches.length !== 1) throw new Error(`Cannot patch ${what} to float32`);
+  return matches[0];
+}
+
+// A ValueInfoProto named `name`: type { tensor_type { elem_type } }.
+function patchElemType(bytes, name, from, to) {
+  const encoded = [...new TextEncoder().encode(name)];
+  const pattern = [0x0a, encoded.length, ...encoded, 0x12, null, 0x0a, null, 0x08, from];
+  bytes[findOnly(bytes, pattern, name) + pattern.length - 1] = to;
+}
+
+// The Cast node's attribute { name: "to", i: from, type: INT }.
+function patchCastTo(bytes, from, to) {
+  const pattern = [0x0a, 0x02, 0x74, 0x6f, 0x18, from, 0xa0, 0x01, 0x02];
+  bytes[findOnly(bytes, pattern, "Cast") + 5] = to;
+}
+
 export class F5TTS {
   constructor({ repoName = "", rootPath = "", useFP16 = true, emit = LOG.trace }) {
     this.repoName = repoName;
@@ -108,6 +141,10 @@ export class F5TTS {
         getModelFile(this.repoName, path, true, { progress_callback: progressCallback })
       )
     );
+    patchElemType(encoderModel, "audio", INT16, FLOAT);
+    patchCastTo(decoderModel, INT16, FLOAT);
+    patchElemType(decoderModel, "output_audio", INT16, FLOAT);
+
     this.sessions.encoder = await createInferenceSession(
       encoderModel,
       sessionOptions,
@@ -164,7 +201,8 @@ export class F5TTS {
       refAudio = refAudio.div(refRMS * this.targetRMS);
     }
 
-    const audioTensor = normalizeToInt16(refAudio).reshape(1, 1, -1);
+    // Int16 values, as float32 for the patched encoder.
+    const audioTensor = normalizeToInt16(refAudio).to("float32").reshape(1, 1, -1);
 
     // Prepare text
     const combinedText = refText + " " + genText;
